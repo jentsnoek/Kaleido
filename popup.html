@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kaleido</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 48 48">
+          <rect x="3" y="3" width="42" height="42" rx="13" fill="#282025"/>
+          <rect x="9" y="10" width="30" height="28" rx="6" fill="#553D44"/>
+          <path d="M10 17h28v15c0 3.3-2.7 6-6 6H16c-3.3 0-6-2.7-6-6V17Z" fill="#CDD6F4"/>
+          <path d="M10 31c5-1 8-10 15-9 5 .7 7 6 13 4v7c0 3.3-2.7 6-6 6H16c-3.3 0-6-2.7-6-6v-2Z" fill="#ECA8BD"/>
+          <circle cx="15" cy="13.5" r="1.5" fill="#CDD6F4"/>
+          <circle cx="20" cy="13.5" r="1.5" fill="#ECA8BD"/>
+          <path d="M36 7.5 37.5 11l3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5L36 7.5Z" fill="#CDD6F4"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Kaleido</h1>
+        <p>One palette. Every site.</p>
+      </div>
+    </header>
+
+    <section class="site-section">
+      <div class="section-heading">
+        <h2>Site theme</h2>
+        <span id="siteState" class="state-pill">Checking site.</span>
+      </div>
+      <label class="field-label" for="siteName">Name</label>
+      <input id="siteName" class="text-input" type="text" maxlength="40" placeholder="For example, OP.GG">
+      <label class="field-label" for="domain">Website</label>
+      <input id="domain" class="text-input" type="text" spellcheck="false" placeholder="op.gg">
+      <p class="hint">Open a site to add it, or enter a domain above.</p>
+    </section>
+
+    <section class="palette-section">
+      <div class="section-heading">
+        <h2>Colors</h2>
+      </div>
+      <div class="color-grid">
+        <label class="color-control"><span>Page</span><input id="base" type="color" value="#282025"><code id="baseValue">#282025</code></label>
+        <label class="color-control"><span>Cards</span><input id="surface" type="color" value="#553D44"><code id="surfaceValue">#553D44</code></label>
+        <label class="color-control"><span>Accent</span><input id="accent" type="color" value="#ECA8BD"><code id="accentValue">#ECA8BD</code></label>
+        <label class="color-control"><span>Text</span><input id="text" type="color" value="#CDD6F4"><code id="textValue">#CDD6F4</code></label>
+      </div>
+      <button id="saveTheme" class="primary-button" type="button">Save theme for this site</button>
+      <p id="status" class="status" aria-live="polite"></p>
+    </section>
+
+    <section class="saved-section">
+      <div class="section-heading">
+        <h2>Your sites</h2>
+        <span id="siteCount" class="count-pill">0</span>
+      </div>
+      <div id="savedList" class="saved-list"></div>
+      <p id="emptyState" class="empty-state">Your saved themes will appear here.</p>
+    </section>
+
+    <footer>
+      <span>Theme settings stay on this device.</span>
+      <a href="privacy.html" target="_blank">Privacy</a>
+    </footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
