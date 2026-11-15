@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Kaleido",
+  "version": "0.1.0",
+  "description": "Create a custom color theme for each website you use.",
+  "icons": {
+    "16": "icons/kaleido-16.png",
+    "32": "icons/kaleido-32.png",
+    "48": "icons/kaleido-48.png",
+    "128": "icons/kaleido-128.png"
+  },
+  "permissions": ["activeTab", "storage", "scripting"],
+  "optional_host_permissions": ["*://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Kaleido",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/kaleido-16.png",
+      "32": "icons/kaleido-32.png"
+    }
+  }
+}
