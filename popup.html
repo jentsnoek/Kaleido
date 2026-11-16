@@ -51,8 +51,25 @@
       <div id="targetList" class="target-list"></div>
     </section>
 
+    <section class="section transfer-section">
+      <details>
+        <summary>Move settings to another device</summary>
+        <p class="hint">Make an encrypted code for your colors and groups. Use the same passphrase to import it on another device.</p>
+        <label class="transfer-label" for="transferPassword">Passphrase</label>
+        <input id="transferPassword" class="transfer-password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
+        <label class="transfer-label" for="transferCode">Encrypted code</label>
+        <textarea id="transferCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Create a code here, or paste one from another device"></textarea>
+        <div class="transfer-buttons">
+          <button id="exportSettings" class="small-button" type="button">Create code</button>
+          <button id="importSettings" class="small-button" type="button">Import code</button>
+          <button id="copySettings" class="small-button" type="button" hidden>Copy code</button>
+        </div>
+        <p class="transfer-note">Your passphrase is never saved. Website access still has to be granted separately by each browser.</p>
+      </details>
+    </section>
+
     <footer>
-      <span>Your colors and picked areas stay on this device.</span>
+      <span>Saved locally. Export an encrypted code for your other devices.</span>
       <a href="privacy.html" target="_blank">Privacy</a>
     </footer>
   </main>
