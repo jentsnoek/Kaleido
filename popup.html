@@ -35,11 +35,10 @@
         <h2>Colors</h2>
         <span id="colorCount" class="count-pill">4</span>
       </div>
-      <p class="hint">Choose a saved color for an area. Save more colors below.</p>
+      <p class="hint">Choose a saved color for the next group. Save more colors below.</p>
       <div id="colorLibrary" class="color-library"></div>
       <div class="add-color-row">
         <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
-        <input id="newColorName" class="text-input" type="text" maxlength="32" placeholder="Name this color">
         <button id="saveColor" class="small-button" type="button">Save color</button>
       </div>
       <p id="status" class="status" aria-live="polite"></p>
@@ -47,7 +46,7 @@
 
     <section class="section areas-section">
       <div class="section-heading"><h2>Picked areas</h2></div>
-      <p class="hint">Pick an area on the page, confirm it, then choose one of your colors.</p>
+      <p class="hint">Select one or more highlighted areas, confirm them, then choose a color for the group.</p>
       <button id="pickArea" class="primary-button" type="button">Pick an area on this page</button>
       <div id="targetList" class="target-list"></div>
     </section>
