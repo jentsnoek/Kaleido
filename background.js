@@ -1,57 +1,51 @@
-const DEFAULT_COLORS = {
-  base: "#282025",
-  surface: "#553D44",
-  accent: "#ECA8BD",
-  text: "#CDD6F4"
-};
-
 const ALL_SITES_PATTERN = "*://*/*";
-const PICKED_ROLES = new Set(["base", "surface", "accent", "text"]);
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
   host = host.replace(/^https?:\/\//, "").split(/[/?#]/)[0];
-  host = host.replace(/:\d+$/, "").replace(/^www\./, "");
-  return host;
+  return host.replace(/:\d+$/, "").replace(/^www\./, "");
 }
 
 function permissionPattern(domain) {
-  const normalized = normalizeHost(domain);
-  const hostPattern = normalized.includes(".") ? "*." + normalized : normalized;
-  return "*://" + hostPattern + "/*";
+  const host = normalizeHost(domain);
+  return "*://" + (host.includes(".") ? "*." + host : host) + "/*";
 }
 
-function validColors(colors) {
-  if (!colors || typeof colors !== "object") return null;
-  const result = {};
-  for (const key of ["base", "surface", "accent", "text"]) {
-    const value = colors[key];
-    if (typeof value !== "string" || !/^#[0-9a-fA-F]{6}$/.test(value)) return null;
-    result[key] = value;
-  }
-  return result;
+function isColor(value) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
 }
 
-function cleanRules(rules) {
-  if (!Array.isArray(rules)) return [];
-  return rules.filter(rule =>
-    rule &&
-    typeof rule.selector === "string" &&
-    rule.selector.length > 0 &&
-    rule.selector.length <= 1000 &&
-    PICKED_ROLES.has(rule.role)
-  ).map(rule => ({
-    selector: rule.selector,
-    role: rule.role,
-    label: typeof rule.label === "string" ? rule.label.slice(0, 80) : rule.selector.slice(0, 80)
+function cleanColorLibrary(colors) {
+  if (!Array.isArray(colors)) return [];
+  return colors.filter(color =>
+    color && typeof color.id === "string" && color.id.length <= 80 && isColor(color.value)
+  ).map(color => ({
+    id: color.id,
+    name: typeof color.name === "string" ? color.name.slice(0, 32) : "Saved color",
+    value: color.value.toUpperCase()
   }));
 }
 
-function findTheme(host, themes) {
-  const matches = Object.values(themes || {})
-    .filter(item => item && item.domain && (host === item.domain || host.endsWith("." + item.domain)))
-    .sort((a, b) => b.domain.length - a.domain.length);
-  return matches[0] || null;
+function cleanRules(rules, colors) {
+  if (!Array.isArray(rules)) return [];
+  return rules.filter(rule =>
+    rule && typeof rule.selector === "string" && rule.selector.length > 0 && rule.selector.length <= 1000
+  ).map(rule => {
+    const savedColor = colors.find(color => color.id === rule.colorId);
+    const value = savedColor?.value || rule.value;
+    if (!isColor(value)) return null;
+    return {
+      selector: rule.selector,
+      label: typeof rule.label === "string" ? rule.label.slice(0, 80) : rule.selector.slice(0, 80),
+      value: value.toUpperCase()
+    };
+  }).filter(Boolean);
+}
+
+function matchingDomain(host, siteRules) {
+  return Object.keys(siteRules || {})
+    .filter(domain => Array.isArray(siteRules[domain]) && (host === domain || host.endsWith("." + domain)))
+    .sort((a, b) => b.length - a.length)[0] || "";
 }
 
 async function hasSiteAccess(domain) {
@@ -74,39 +68,28 @@ async function applyToTab(tab) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
   const host = normalizeHost(url.hostname);
-  const { themes = {}, siteRules = {} } = await chrome.storage.local.get(["themes", "siteRules"]);
-  const stored = findTheme(host, themes);
-  let colors = null;
-  let rules = [];
-  if (stored && stored.enabled && await hasSiteAccess(stored.domain)) {
-    colors = validColors(stored.colors) || DEFAULT_COLORS;
-    rules = cleanRules(siteRules[stored.domain]);
-  }
-
+  const { siteRules = {}, colors = [] } = await chrome.storage.local.get(["siteRules", "colors"]);
+  const domain = matchingDomain(host, siteRules);
+  const rules = domain && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: applyKaleidoTheme,
-      args: [colors, rules]
-    });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: applyKaleidoRules, args: [rules] });
   } catch {
-    // Chrome internal pages and pages without site access cannot be changed.
+    // Browser internal pages and pages without access cannot be changed.
   }
 }
 
-function applyKaleidoTheme(colors, rules) {
-  const styleSelector = "style[data-kaleido-theme]";
-  const oldStyle = document.querySelector(styleSelector);
+function applyKaleidoRules(rules) {
   if (window.__kaleidoObserver) {
     window.__kaleidoObserver.disconnect();
     window.__kaleidoObserver = null;
   }
 
-  const oldMarkers = [
-    "[data-kaleido-picked-role]", "[data-kaleido-root]", "[data-kaleido-bg]",
-    "[data-kaleido-fg]", "[data-kaleido-border]", "[data-kaleido-link]"
+  const markers = [
+    "[data-kaleido-target]", "[data-kaleido-picked-role]", "[data-kaleido-root]",
+    "[data-kaleido-bg]", "[data-kaleido-fg]", "[data-kaleido-border]", "[data-kaleido-link]"
   ].join(",");
-  document.querySelectorAll(oldMarkers).forEach(element => {
+  document.querySelectorAll(markers).forEach(element => {
+    element.removeAttribute("data-kaleido-target");
     element.removeAttribute("data-kaleido-picked-role");
     element.removeAttribute("data-kaleido-root");
     element.removeAttribute("data-kaleido-bg");
@@ -115,59 +98,41 @@ function applyKaleidoTheme(colors, rules) {
     element.removeAttribute("data-kaleido-link");
   });
 
-  if (!colors) {
-    if (oldStyle) oldStyle.remove();
-    return;
-  }
-
-  const safe = {};
-  for (const key of ["base", "surface", "accent", "text"]) {
-    const value = colors[key];
-    safe[key] = typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_COLORS[key];
-  }
+  const oldStyle = document.querySelector("style[data-kaleido-styles], style[data-kaleido-theme]");
+  if (oldStyle) oldStyle.remove();
   const safeRules = Array.isArray(rules) ? rules.filter(rule =>
     rule && typeof rule.selector === "string" && rule.selector.length <= 1000 &&
-    ["base", "surface", "accent", "text"].includes(rule.role)
+    isColor(rule.value)
   ) : [];
+  if (!safeRules.length) return;
 
   function applyRules(root) {
-    for (const rule of safeRules) {
+    safeRules.forEach((rule, index) => {
       try {
         if (root instanceof Element && root.matches(rule.selector)) {
-          root.setAttribute("data-kaleido-picked-role", rule.role);
+          root.setAttribute("data-kaleido-target", String(index));
         }
         if (root && typeof root.querySelectorAll === "function") {
-          root.querySelectorAll(rule.selector).forEach(element => element.setAttribute("data-kaleido-picked-role", rule.role));
+          root.querySelectorAll(rule.selector).forEach(element => element.setAttribute("data-kaleido-target", String(index)));
         }
       } catch {
         // A selector may stop matching after the website changes its markup.
       }
-    }
-  }
-
-  if (!safeRules.length) {
-    if (oldStyle) oldStyle.remove();
-    return;
+    });
   }
 
   applyRules(document);
-  const style = oldStyle || document.createElement("style");
-  style.setAttribute("data-kaleido-theme", "true");
-  style.textContent =
-    ":root { --kaleido-base: " + safe.base +
-    "; --kaleido-surface: " + safe.surface +
-    "; --kaleido-accent: " + safe.accent +
-    "; --kaleido-text: " + safe.text + "; }" +
-    "[data-kaleido-picked-role='base'] { background-color: var(--kaleido-base) !important; }" +
-    "[data-kaleido-picked-role='surface'] { background-color: var(--kaleido-surface) !important; }" +
-    "[data-kaleido-picked-role='accent'] { color: var(--kaleido-accent) !important; border-color: var(--kaleido-accent) !important; }" +
-    "[data-kaleido-picked-role='text'] { color: var(--kaleido-text) !important; }";
-  if (!oldStyle) (document.head || document.documentElement).appendChild(style);
+  const style = document.createElement("style");
+  style.setAttribute("data-kaleido-styles", "true");
+  style.textContent = safeRules.map((rule, index) =>
+    `[data-kaleido-target="${index}"] { background-color: ${rule.value} !important; }`
+  ).join("");
+  (document.head || document.documentElement).appendChild(style);
 
   function refreshRules(root) {
-    if (root instanceof Element) root.removeAttribute("data-kaleido-picked-role");
+    if (root instanceof Element) root.removeAttribute("data-kaleido-target");
     if (root && typeof root.querySelectorAll === "function") {
-      root.querySelectorAll("[data-kaleido-picked-role]").forEach(element => element.removeAttribute("data-kaleido-picked-role"));
+      root.querySelectorAll("[data-kaleido-target]").forEach(element => element.removeAttribute("data-kaleido-target"));
     }
     applyRules(root);
   }
@@ -175,9 +140,7 @@ function applyKaleidoTheme(colors, rules) {
   const observer = new MutationObserver(records => {
     for (const record of records) {
       if (record.type === "childList") {
-        record.addedNodes.forEach(node => {
-          if (node instanceof Element) applyRules(node);
-        });
+        record.addedNodes.forEach(node => { if (node instanceof Element) applyRules(node); });
       } else if (record.target instanceof Element) {
         refreshRules(record.target);
       }
@@ -199,23 +162,16 @@ async function refreshOpenTabs() {
   await Promise.all(tabs.map(tab => applyToTab(tab)));
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  void refreshOpenTabs();
-});
-
 async function applyPreview(message, sendResponse) {
+  const colors = cleanColorLibrary(message.colors);
+  const rules = cleanRules(message.rules, colors);
   const tabId = Number(message.tabId);
-  const colors = validColors(message.colors);
-  if (!Number.isInteger(tabId) || !colors) {
+  if (!Number.isInteger(tabId)) {
     sendResponse({ ok: false });
     return;
   }
   try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: applyKaleidoTheme,
-      args: [colors, cleanRules(message.rules)]
-    });
+    await chrome.scripting.executeScript({ target: { tabId }, func: applyKaleidoRules, args: [rules] });
     sendResponse({ ok: true });
   } catch {
     sendResponse({ ok: false });
@@ -232,7 +188,7 @@ async function clearPreview(message, sendResponse) {
   }
 }
 
-async function savePickedRule(message, sender, sendResponse) {
+async function savePickedArea(message, sender, sendResponse) {
   let url;
   try {
     url = new URL(sender.tab?.url || "");
@@ -245,52 +201,48 @@ async function savePickedRule(message, sender, sendResponse) {
     return;
   }
   const selector = String(message.selector || "").trim();
-  const role = String(message.role || "");
-  if (!selector || selector.length > 1000 || !PICKED_ROLES.has(role)) {
+  const colorId = String(message.colorId || "");
+  const label = String(message.label || selector).slice(0, 80);
+  if (!selector || selector.length > 1000 || !colorId) {
     sendResponse({ ok: false });
     return;
   }
 
-  const host = normalizeHost(url.hostname);
-  const { siteRules = {}, themes = {} } = await chrome.storage.local.get(["siteRules", "themes"]);
-  const matchedTheme = findTheme(host, themes);
-  const domain = matchedTheme?.domain || host;
-  const rules = cleanRules(siteRules[domain]);
+  const domain = normalizeHost(url.hostname);
+  const { siteRules = {}, colors = [] } = await chrome.storage.local.get(["siteRules", "colors"]);
+  if (!cleanColorLibrary(colors).some(color => color.id === colorId)) {
+    sendResponse({ ok: false });
+    return;
+  }
+  const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
   const existing = rules.find(rule => rule.selector === selector);
-  const label = typeof message.label === "string" ? message.label.slice(0, 80) : selector.slice(0, 80);
   if (existing) {
-    existing.role = role;
+    existing.colorId = colorId;
     existing.label = label;
+    delete existing.role;
   } else {
-    rules.push({ selector, role, label });
+    rules.push({ selector, label, colorId });
   }
   siteRules[domain] = rules;
   await chrome.storage.local.set({ siteRules });
   sendResponse({ ok: true, domain, rules });
 }
 
+chrome.runtime.onInstalled.addListener(() => { void refreshOpenTabs(); });
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete") void applyToTab(tab);
 });
-
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  try {
-    await applyToTab(await chrome.tabs.get(tabId));
-  } catch {
-    // The tab may close before it can be inspected.
-  }
+  try { await applyToTab(await chrome.tabs.get(tabId)); } catch { /* Tab may close. */ }
 });
-
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.themes || changes.siteRules)) void refreshOpenTabs();
+  if (areaName === "local" && (changes.siteRules || changes.colors)) void refreshOpenTabs();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
   if (message.type === "kaleido-refresh") {
-    refreshOpenTabs()
-      .then(() => sendResponse({ ok: true }))
-      .catch(() => sendResponse({ ok: false }));
+    refreshOpenTabs().then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (message.type === "kaleido-preview") {
@@ -302,7 +254,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "kaleido-target-picked") {
-    void savePickedRule(message, sender, sendResponse);
+    void savePickedArea(message, sender, sendResponse);
+    return true;
+  }
+  if (message.type === "kaleido-get-colors") {
+    chrome.storage.local.get(["colors", "activeColorId"]).then(result => {
+      sendResponse({ colors: cleanColorLibrary(result.colors), activeColorId: result.activeColorId || "" });
+    }).catch(() => sendResponse({ colors: [], activeColorId: "" }));
     return true;
   }
 });
