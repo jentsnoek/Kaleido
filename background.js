@@ -170,6 +170,83 @@ function applyKaleidoRules(rules) {
   window.__kaleidoObserver = observer;
 }
 
+
+async function focusAreaOnTab(message, sendResponse) {
+  const tabId = Number(message.tabId);
+  if (!Number.isInteger(tabId)) {
+    sendResponse({ ok: false, count: 0 });
+    return;
+  }
+  const selector = typeof message.selector === "string" && message.selector.length <= 1000 ? message.selector : "";
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: previewKaleidoArea,
+      args: [selector, message.active === true]
+    });
+    const count = Number(results?.[0]?.result) || 0;
+    sendResponse({ ok: message.active !== true || count > 0, count });
+  } catch {
+    sendResponse({ ok: false, count: 0 });
+  }
+}
+
+function previewKaleidoArea(selector, active) {
+  const oldPreview = window.__kaleidoAreaPreview;
+  if (oldPreview && typeof oldPreview.cleanup === "function") oldPreview.cleanup();
+  window.__kaleidoAreaPreview = null;
+  if (!active || !selector) return 0;
+
+  let targets;
+  try {
+    targets = Array.from(document.querySelectorAll(selector)).slice(0, 80);
+  } catch {
+    return 0;
+  }
+  if (!targets.length) return 0;
+
+  const host = document.createElement("div");
+  host.setAttribute("data-kaleido-focus-preview", "true");
+  const shadow = host.attachShadow({ mode: "closed" });
+  const style = document.createElement("style");
+  style.textContent = ":host{all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none} .layer{position:fixed;inset:0;pointer-events:none} .box{position:fixed;box-sizing:border-box;border:3px solid #ECA8BD;border-radius:4px;background:rgba(236,168,189,.18);box-shadow:0 0 0 2px rgba(40,32,37,.9),0 0 18px rgba(236,168,189,.8);pointer-events:none}";
+  const layer = document.createElement("div");
+  layer.className = "layer";
+  shadow.append(style, layer);
+  (document.documentElement || document.body).appendChild(host);
+
+  const update = () => {
+    layer.replaceChildren();
+    targets.forEach(target => {
+      if (!target.isConnected) return;
+      const rect = target.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const box = document.createElement("div");
+      box.className = "box";
+      box.style.left = rect.left + "px";
+      box.style.top = rect.top + "px";
+      box.style.width = rect.width + "px";
+      box.style.height = rect.height + "px";
+      layer.appendChild(box);
+    });
+  };
+  const observer = new MutationObserver(update);
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
+  window.addEventListener("scroll", update, true);
+  window.addEventListener("resize", update);
+  update();
+
+  window.__kaleidoAreaPreview = {
+    cleanup: () => {
+      observer.disconnect();
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+      host.remove();
+    }
+  };
+  return targets.length;
+}
+
 async function refreshOpenTabs() {
   const tabs = await chrome.tabs.query({});
   await Promise.all(tabs.map(tab => applyToTab(tab)));
@@ -288,6 +365,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "kaleido-clear-preview") {
     void clearPreview(message, sendResponse);
+    return true;
+  }
+  if (message.type === "kaleido-focus-area") {
+    void focusAreaOnTab(message, sendResponse);
     return true;
   }
   if (message.type === "kaleido-targets-picked") {
