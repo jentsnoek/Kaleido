@@ -30,6 +30,14 @@ let openGroupPaletteId = "";
 let previewDirty = false;
 let previewTimer = null;
 let hasAllSitesPermission = false;
+let focusedAreaKey = "";
+let focusedAreaSelector = "";
+
+const transferPasswordInput = document.getElementById("transferPassword");
+const transferCodeInput = document.getElementById("transferCode");
+const exportSettingsButton = document.getElementById("exportSettings");
+const importSettingsButton = document.getElementById("importSettings");
+const copySettingsButton = document.getElementById("copySettings");
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
@@ -222,6 +230,7 @@ function renderTargets() {
     toggle.setAttribute("aria-label", isCollapsed ? `Expand Group ${groupIndex + 1}` : `Minimize Group ${groupIndex + 1}`);
     toggle.setAttribute("aria-expanded", String(!isCollapsed));
     toggle.addEventListener("click", async () => {
+      if (!isCollapsed && focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
       collapsedGroups[collapseKey] = !isCollapsed;
       if (!isCollapsed && openGroupPaletteId === group.id) openGroupPaletteId = "";
       await chrome.storage.local.set({ collapsedGroups });
@@ -248,6 +257,7 @@ function renderTargets() {
     deleteGroup.title = "Delete this entire group and all its areas";
     deleteGroup.setAttribute("aria-label", `Delete Group ${groupIndex + 1}`);
     deleteGroup.addEventListener("click", async () => {
+      if (focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
       siteRules[activeHost] = (siteRules[activeHost] || []).filter(rule => rule.groupId !== group.id);
       delete collapsedGroups[collapseKey];
       if (openGroupPaletteId === group.id) openGroupPaletteId = "";
@@ -288,15 +298,52 @@ function renderTargets() {
     areaList.hidden = isCollapsed;
     group.rules.forEach(rule => {
       const row = document.createElement("div");
+      const previewKey = group.id + "::" + rule.selector;
+      const isFocused = focusedAreaKey === previewKey;
       row.className = "group-area";
-      const label = document.createElement("span");
-      label.className = "group-area-name";
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "group-area-select" + (isFocused ? " focused" : "");
       label.textContent = rule.label || rule.selector;
+      label.title = isFocused ? "Click to stop highlighting this area" : "Click to highlight this area on the page";
+      label.setAttribute("aria-pressed", String(isFocused));
+      label.addEventListener("click", async () => {
+        if (focusedAreaKey === previewKey) {
+          await clearFocusedArea();
+          renderTargets();
+          return;
+        }
+        focusedAreaKey = previewKey;
+        focusedAreaSelector = rule.selector;
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: "kaleido-focus-area",
+            tabId: activeTabId,
+            selector: rule.selector,
+            active: true
+          });
+          if (!result?.ok || !result.count) {
+            focusedAreaKey = "";
+            focusedAreaSelector = "";
+            renderTargets();
+            showStatus("That area is not visible on this page right now.", true);
+            return;
+          }
+          renderTargets();
+        } catch {
+          focusedAreaKey = "";
+          focusedAreaSelector = "";
+          renderTargets();
+          showStatus("Kaleido could not preview that area.", true);
+        }
+      });
       const remove = document.createElement("button");
       remove.type = "button";
+      remove.className = "group-area-remove";
       remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove ${rule.label || "area"} from Group ${groupIndex + 1}`);
+      remove.setAttribute("aria-label", "Remove " + (rule.label || "area") + " from Group " + (groupIndex + 1));
       remove.addEventListener("click", async () => {
+        if (focusedAreaKey === previewKey) await clearFocusedArea();
         siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
         if (!siteRules[activeHost].some(item => item.groupId === group.id)) delete collapsedGroups[collapseKey];
         await chrome.storage.local.set({ siteRules, collapsedGroups });
@@ -399,9 +446,209 @@ function migrateRules(oldRules, oldThemes) {
   return migrated;
 }
 
+
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBytes(value) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
+  return Uint8Array.from(binary, char => char.charCodeAt(0));
+}
+
+async function deriveTransferKey(passphrase, salt) {
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function exportSettings() {
+  const passphrase = transferPasswordInput.value;
+  if (passphrase.length < 8) {
+    showStatus("Use a password or passphrase with at least 8 characters.", true);
+    return;
+  }
+  try {
+    const payload = {
+      format: "kaleido-settings",
+      version: 1,
+      colors,
+      siteRules,
+      activeColorId,
+      collapsedGroups
+    };
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveTransferKey(passphrase, salt);
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      new TextEncoder().encode(JSON.stringify(payload))
+    );
+    transferCodeInput.value = [
+      "KAL1",
+      bytesToBase64Url(salt),
+      bytesToBase64Url(iv),
+      bytesToBase64Url(new Uint8Array(ciphertext))
+    ].join(".");
+    copySettingsButton.hidden = false;
+    showStatus("Encrypted transfer code created. Keep the passphrase with it.");
+  } catch {
+    showStatus("Kaleido could not create the encrypted code.", true);
+  }
+}
+
+function validateImportedSettings(data) {
+  if (!data || data.format !== "kaleido-settings" || data.version !== 1 ||
+      !Array.isArray(data.colors) || !data.siteRules || typeof data.siteRules !== "object" ||
+      Array.isArray(data.siteRules)) {
+    throw new Error("This is not a Kaleido settings code.");
+  }
+  if (data.colors.length > 1000) throw new Error("The code contains too many colors.");
+  const importedColors = [];
+  const colorIds = new Set();
+  for (const color of data.colors) {
+    if (!color || typeof color.id !== "string" || !color.id || color.id.length > 80 || !isHex(color.value)) {
+      throw new Error("The code contains an invalid color.");
+    }
+    if (!colorIds.has(color.id)) {
+      colorIds.add(color.id);
+      importedColors.push({ id: color.id, value: color.value.toUpperCase() });
+    }
+  }
+
+  const importedRules = {};
+  const domains = Object.entries(data.siteRules);
+  if (domains.length > 500) throw new Error("The code contains too many websites.");
+  let totalRules = 0;
+  for (const [domain, rules] of domains) {
+    if (!/^[a-z0-9.-]{1,253}$/i.test(domain) || !Array.isArray(rules) || rules.length > 2000) {
+      throw new Error("The code contains invalid website settings.");
+    }
+    importedRules[domain] = rules.map(rule => {
+      if (!rule || typeof rule.selector !== "string" || !rule.selector || rule.selector.length > 1000 ||
+          typeof rule.label !== "string" || rule.label.length > 80 ||
+          typeof rule.groupId !== "string" || !rule.groupId || rule.groupId.length > 120 ||
+          typeof rule.colorId !== "string" || !colorIds.has(rule.colorId)) {
+        throw new Error("The code contains an invalid area.");
+      }
+      return {
+        selector: rule.selector,
+        label: rule.label,
+        groupId: rule.groupId,
+        colorId: rule.colorId
+      };
+    });
+    totalRules += rules.length;
+  }
+  if (totalRules > 10000) throw new Error("The code contains too many saved areas.");
+
+  const collapsed = {};
+  if (data.collapsedGroups && typeof data.collapsedGroups === "object" && !Array.isArray(data.collapsedGroups)) {
+    for (const [key, value] of Object.entries(data.collapsedGroups).slice(0, 5000)) {
+      if (typeof key === "string" && key.length <= 350 && typeof value === "boolean") collapsed[key] = value;
+    }
+  }
+  return {
+    colors: importedColors,
+    siteRules: importedRules,
+    collapsedGroups: collapsed,
+    activeColorId: typeof data.activeColorId === "string" && colorIds.has(data.activeColorId) ? data.activeColorId : ""
+  };
+}
+
+async function importSettings() {
+  const code = transferCodeInput.value.trim();
+  const passphrase = transferPasswordInput.value;
+  if (passphrase.length < 8) {
+    showStatus("Enter the passphrase used to create the code.", true);
+    return;
+  }
+  if (!code.startsWith("KAL1.") || code.length > 4000000) {
+    showStatus("Paste a Kaleido transfer code into the box first.", true);
+    return;
+  }
+  if (!window.confirm("Importing replaces the Kaleido colors and groups currently saved on this device. Continue?")) return;
+
+  try {
+    const [prefix, saltText, ivText, ciphertextText, extra] = code.split(".");
+    if (prefix !== "KAL1" || !saltText || !ivText || !ciphertextText || extra) throw new Error("This code is not valid.");
+    const salt = base64UrlToBytes(saltText);
+    const iv = base64UrlToBytes(ivText);
+    const ciphertext = base64UrlToBytes(ciphertextText);
+    if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) throw new Error("This code is not valid.");
+    const key = await deriveTransferKey(passphrase, salt);
+    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    const data = JSON.parse(new TextDecoder().decode(decrypted));
+    const imported = validateImportedSettings(data);
+
+    colors = DEFAULT_COLORS.map(color => ({ ...color }));
+    imported.colors.forEach(color => addColor(color.value, color.id));
+    siteRules = imported.siteRules;
+    collapsedGroups = imported.collapsedGroups;
+    activeColorId = colors.some(color => color.id === imported.activeColorId)
+      ? imported.activeColorId
+      : colors[0]?.id || "";
+    await chrome.storage.local.set({ colors, siteRules, activeColorId, collapsedGroups });
+    await chrome.storage.local.remove(["themes", "palettes"]);
+    await refreshTabs();
+    renderColorLibrary();
+    renderTargets();
+    showStatus("Colors and groups imported to this device.");
+  } catch {
+    showStatus("Could not unlock that code. Check the code and passphrase.", true);
+  }
+}
+
+async function copySettingsCode() {
+  if (!transferCodeInput.value) return;
+  try {
+    await navigator.clipboard.writeText(transferCodeInput.value);
+    showStatus("Encrypted code copied.");
+  } catch {
+    transferCodeInput.focus();
+    transferCodeInput.select();
+    showStatus("Select and copy the encrypted code from the box.");
+  }
+}
+
+async function clearFocusedArea() {
+  const selector = focusedAreaSelector;
+  focusedAreaKey = "";
+  focusedAreaSelector = "";
+  if (!activeTabId) return;
+  try {
+    await chrome.runtime.sendMessage({
+      type: "kaleido-focus-area",
+      tabId: activeTabId,
+      selector,
+      active: false
+    });
+  } catch { /* The page or tab may have closed. */ }
+}
+
 async function initialize() {
   saveColorButton.addEventListener("click", saveColor);
   pickAreaButton.addEventListener("click", () => pickArea());
+  exportSettingsButton.addEventListener("click", exportSettings);
+  importSettingsButton.addEventListener("click", importSettings);
+  copySettingsButton.addEventListener("click", copySettingsCode);
   const result = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "themes", "palettes", "collapsedGroups"]);
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
 
@@ -447,6 +694,9 @@ async function initialize() {
 
 window.addEventListener("pagehide", () => {
   clearTimeout(previewTimer);
+  if (focusedAreaSelector && activeTabId) {
+    try { void chrome.runtime.sendMessage({ type: "kaleido-focus-area", tabId: activeTabId, selector: focusedAreaSelector, active: false }); } catch { /* Popup may close. */ }
+  }
   if (previewDirty && activeTabId) {
     try { void chrome.runtime.sendMessage({ type: "kaleido-clear-preview", tabId: activeTabId }); } catch { /* Popup may close. */ }
   }
