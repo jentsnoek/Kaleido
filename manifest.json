@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kaleido",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Create a custom color theme for each website you use.",
   "icons": {
     "16": "icons/kaleido-16.png",
