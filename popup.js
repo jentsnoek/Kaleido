@@ -25,6 +25,8 @@ let activeTabId = null;
 let colors = [];
 let siteRules = {};
 let activeColorId = "";
+let collapsedGroups = {};
+let openGroupPaletteId = "";
 let previewDirty = false;
 let previewTimer = null;
 let hasAllSitesPermission = false;
@@ -185,6 +187,9 @@ function renderTargets() {
   }
 
   groups.forEach((group, groupIndex) => {
+    const collapseKey = `${activeHost}:${group.id}`;
+    const isCollapsed = collapsedGroups[collapseKey] ?? true;
+    const paletteIsOpen = openGroupPaletteId === group.id;
     const card = document.createElement("section");
     card.className = "group-card";
     const heading = document.createElement("div");
@@ -195,10 +200,68 @@ function renderTargets() {
     const count = document.createElement("span");
     count.className = "group-count";
     count.textContent = `${group.rules.length} area${group.rules.length === 1 ? "" : "s"}`;
-    heading.append(title, count);
+    const summary = document.createElement("div");
+    summary.className = "group-summary";
+    summary.append(title, count);
+
+    const controls = document.createElement("div");
+    controls.className = "group-controls";
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "group-icon-button add-area-button";
+    add.textContent = "+";
+    add.title = "Add area to this group";
+    add.setAttribute("aria-label", `Add area to Group ${groupIndex + 1}`);
+    add.addEventListener("click", () => pickArea(group.id));
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "group-icon-button collapse-button";
+    toggle.textContent = isCollapsed ? "+" : "-";
+    toggle.title = isCollapsed ? "Expand group" : "Minimize group";
+    toggle.setAttribute("aria-label", isCollapsed ? `Expand Group ${groupIndex + 1}` : `Minimize Group ${groupIndex + 1}`);
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
+    toggle.addEventListener("click", async () => {
+      collapsedGroups[collapseKey] = !isCollapsed;
+      if (!isCollapsed && openGroupPaletteId === group.id) openGroupPaletteId = "";
+      await chrome.storage.local.set({ collapsedGroups });
+      renderTargets();
+    });
+
+    const currentColor = colors.find(color => color.id === group.colorId) || colors[0];
+    const colorToggle = document.createElement("button");
+    colorToggle.type = "button";
+    colorToggle.className = "group-current-color";
+    colorToggle.style.backgroundColor = currentColor?.value || "transparent";
+    colorToggle.title = "Choose this group's color";
+    colorToggle.setAttribute("aria-label", `Choose color for Group ${groupIndex + 1}`);
+    colorToggle.setAttribute("aria-expanded", String(paletteIsOpen));
+    colorToggle.addEventListener("click", () => {
+      openGroupPaletteId = paletteIsOpen ? "" : group.id;
+      renderTargets();
+    });
+
+    const deleteGroup = document.createElement("button");
+    deleteGroup.type = "button";
+    deleteGroup.className = "group-delete";
+    deleteGroup.textContent = "Delete";
+    deleteGroup.title = "Delete this entire group and all its areas";
+    deleteGroup.setAttribute("aria-label", `Delete Group ${groupIndex + 1}`);
+    deleteGroup.addEventListener("click", async () => {
+      siteRules[activeHost] = (siteRules[activeHost] || []).filter(rule => rule.groupId !== group.id);
+      delete collapsedGroups[collapseKey];
+      if (openGroupPaletteId === group.id) openGroupPaletteId = "";
+      await chrome.storage.local.set({ siteRules, collapsedGroups });
+      await refreshTabs();
+      renderTargets();
+      showStatus("Group deleted.");
+    });
+    controls.append(add, toggle, colorToggle, deleteGroup);
+    heading.append(summary, controls);
 
     const palette = document.createElement("div");
     palette.className = "group-palette";
+    palette.hidden = !paletteIsOpen;
     colors.forEach((color, colorIndex) => {
       const swatch = document.createElement("button");
       swatch.type = "button";
@@ -213,6 +276,7 @@ function renderTargets() {
         );
         await chrome.storage.local.set({ siteRules });
         await refreshTabs();
+        openGroupPaletteId = "";
         renderTargets();
         showStatus("Group color updated.");
       });
@@ -221,6 +285,7 @@ function renderTargets() {
 
     const areaList = document.createElement("div");
     areaList.className = "group-areas";
+    areaList.hidden = isCollapsed;
     group.rules.forEach(rule => {
       const row = document.createElement("div");
       row.className = "group-area";
@@ -233,7 +298,8 @@ function renderTargets() {
       remove.setAttribute("aria-label", `Remove ${rule.label || "area"} from Group ${groupIndex + 1}`);
       remove.addEventListener("click", async () => {
         siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
-        await chrome.storage.local.set({ siteRules });
+        if (!siteRules[activeHost].some(item => item.groupId === group.id)) delete collapsedGroups[collapseKey];
+        await chrome.storage.local.set({ siteRules, collapsedGroups });
         await refreshTabs();
         renderTargets();
         showStatus("Area removed from its group.");
@@ -242,12 +308,7 @@ function renderTargets() {
       areaList.appendChild(row);
     });
 
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "group-add";
-    add.textContent = "Add area to group";
-    add.addEventListener("click", () => pickArea(group.id));
-    card.append(heading, palette, areaList, add);
+    card.append(heading, palette, areaList);
     targetList.appendChild(card);
   });
 }
@@ -341,7 +402,7 @@ function migrateRules(oldRules, oldThemes) {
 async function initialize() {
   saveColorButton.addEventListener("click", saveColor);
   pickAreaButton.addEventListener("click", () => pickArea());
-  const result = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "themes", "palettes"]);
+  const result = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "themes", "palettes", "collapsedGroups"]);
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
 
   if (Array.isArray(result.colors)) {
@@ -361,6 +422,7 @@ async function initialize() {
   }
 
   siteRules = migrateRules(result.siteRules, result.themes || {});
+  collapsedGroups = result.collapsedGroups && typeof result.collapsedGroups === "object" ? result.collapsedGroups : {};
   activeColorId = colors.some(color => color.id === result.activeColorId) ? result.activeColorId : colors[0]?.id || "";
   hasAllSitesPermission = await chrome.permissions.contains({ origins: [ALL_SITES_PATTERN] });
 
@@ -378,7 +440,7 @@ async function initialize() {
     siteName.textContent = "Open a webpage";
   }
 
-  await chrome.storage.local.set({ colors, siteRules, activeColorId });
+  await chrome.storage.local.set({ colors, siteRules, activeColorId, collapsedGroups });
   renderColorLibrary();
   renderTargets();
 }
