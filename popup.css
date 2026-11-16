@@ -112,7 +112,7 @@ h2 { font-size: 12px; letter-spacing: .35px; text-transform: uppercase; color: #
 .palette-swatches { display: flex; gap: 4px; margin-top: 5px; }
 .palette-swatch { width: 14px; height: 10px; border: 1px solid #ffffff30; border-radius: 3px; }
 .palette-actions { display: flex; gap: 5px; }
-.small-button, .secondary-button, .target-card button {
+.small-button, .secondary-button, .target-card button, .palette-actions button {
   border: 1px solid rgba(236,168,189,.24);
   border-radius: 7px;
   padding: 6px 8px;
@@ -121,16 +121,15 @@ h2 { font-size: 12px; letter-spacing: .35px; text-transform: uppercase; color: #
   font: 10px "Segoe UI", system-ui, sans-serif;
   cursor: pointer;
 }
-.small-button:hover, .secondary-button:hover, .target-card button:hover { border-color: var(--accent); color: var(--accent); }
+.small-button:hover, .secondary-button:hover, .target-card button:hover, .palette-actions button:hover { border-color: var(--accent); color: var(--accent); }
 .palette-save-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 8px; }
 .palette-save-row .text-input { min-width: 0; }
-.auto-row { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; }
-.auto-row input { margin: 0; accent-color: var(--accent); }
 .secondary-button { width: 100%; margin-top: 8px; padding: 8px; }
 .target-empty { color: var(--muted); font-size: 10px; padding: 4px 1px; }
 .target-name { min-width: 0; overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.target-role { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; }
-.target-card button { padding: 4px 6px; }
+.target-card { grid-template-columns: minmax(0, 1fr) 112px auto; }
+.target-card select { min-width: 0; width: 112px; border: 1px solid rgba(236,168,189,.24); border-radius: 6px; padding: 5px 4px; color: var(--text); background: #211A20; font: 9px "Segoe UI", system-ui, sans-serif; }
+.target-card button { padding: 5px 6px; }
 .status { min-height: 15px; margin-top: 7px; color: var(--accent); font-size: 10px; }
 .saved-list { display: grid; gap: 7px; }
 .site-card {
@@ -157,7 +156,12 @@ h2 { font-size: 12px; letter-spacing: .35px; text-transform: uppercase; color: #
   cursor: pointer;
 }
 .site-actions button:hover { border-color: var(--accent); color: var(--accent); }
-.site-actions .delete-button { color: #E5A6B6; }
+.site-actions .delete-button, .delete-button { color: #E5A6B6 !important; }
+.sites-summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; color: #F4D9E3; font-size: 12px; font-weight: 700; list-style: none; text-transform: uppercase; }
+.sites-summary::-webkit-details-marker { display: none; }
+.sites-summary::after { content: "Show"; margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 500; text-transform: none; }
+#sitesDetails[open] .sites-summary::after { content: "Hide"; }
+.sites-summary .count-pill { margin-left: 8px; }
 .toggle { accent-color: var(--accent); cursor: pointer; }
 .empty-state { color: var(--muted); font-size: 10px; }
 footer { display: flex; align-items: center; justify-content: space-between; color: #A995A5; font-size: 10px; padding: 1px 2px; }
