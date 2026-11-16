@@ -33,7 +33,7 @@
   const cancel = document.createElement("button");
   cancel.id = "cancel";
   cancel.type = "button";
-  cancel.textContent = "Cancel � Esc";
+  cancel.textContent = "Cancel (Esc)";
   panel.append(title, hint, roles, cancel);
   shadow.append(style, outline, panel);
   document.documentElement.appendChild(host);
@@ -128,14 +128,13 @@
   function showRoleMenu(element) {
     selectedElement = element;
     title.textContent = `Selected: ${describe(element)}`;
-    hint.textContent = "Pick a color role, or ignore this area in automatic matching.";
+    hint.textContent = "Pick which of your four theme colors this area should use.";
     roles.replaceChildren();
     const options = [
       ["base", "Page color"],
       ["surface", "Card color"],
       ["text", "Text color"],
       ["accent", "Accent color"],
-      ["ignore", "Ignore automatic matching"]
     ];
     for (const [role, label] of options) {
       const button = document.createElement("button");
