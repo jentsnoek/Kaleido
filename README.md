@@ -16,7 +16,7 @@ The first time you pick an area, the browser asks for website access. Kaleido us
 
 Move over the page to see the highlighted area. Click each area you want to change, confirm the highlighted selection, then choose a saved color square for that group. Kaleido applies and saves the color for the current website. Groups start collapsed in the popup. Expand one to review or remove areas, click an area name to highlight it on the page (click again to clear the highlight), use its color square to recolor everything together, add more areas with **+**, or delete the group. Add, edit, and remove saved colors in the **Colors** section.
 
-Your color library and picked areas are stored in the browser's local extension storage. Use **Move settings to another device** to create an AES-GCM encrypted transfer code protected by your passphrase. The code contains saved colors and site groups; browser website permissions must still be granted on each device. Kaleido does not send page data or settings to a server. See [`privacy.html`](./privacy.html).
+Your color library and picked areas are stored in the browser's local extension storage. Use **Move settings to another device** to create a compressed, AES-GCM encrypted transfer code protected by your passphrase. The code contains saved colors and site groups; browser website permissions must still be granted on each device. Kaleido does not send page data or settings to a server. See [`privacy.html`](./privacy.html).
 
 Kaleido is an unofficial community project and is not affiliated with or endorsed by Riot Games.
 
