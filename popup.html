@@ -20,67 +20,40 @@
           <path d="M36 7.5 37.5 11l3.5 1.5-3.5 1.5-1.5 3.5-1.5-3.5-3.5-1.5 3.5-1.5L36 7.5Z" fill="#CDD6F4"/>
         </svg>
       </div>
-      <div>
+      <div class="brand-copy">
         <h1>Kaleido</h1>
-        <p>One palette. Every site.</p>
+        <p>Pick areas. Choose colors.</p>
+      </div>
+      <div class="current-site">
+        <span>On this site</span>
+        <strong id="siteName">Open a webpage</strong>
       </div>
     </header>
 
-    <section class="site-section">
-      <div class="section-heading">
-        <h2>Site theme</h2>
-        <span id="siteState" class="state-pill">Checking site.</span>
-      </div>
-      <label class="field-label" for="siteName">Name</label>
-      <input id="siteName" class="text-input" type="text" maxlength="40" placeholder="For example, OP.GG">
-      <label class="field-label" for="domain">Website</label>
-      <input id="domain" class="text-input" type="text" spellcheck="false" placeholder="op.gg">
-      <p class="hint">Save a theme per site. Kaleido asks once for access to all websites.</p>
-    </section>
-
-    <section class="palette-section">
+    <section class="section colors-section">
       <div class="section-heading">
         <h2>Colors</h2>
+        <span id="colorCount" class="count-pill">4</span>
       </div>
-      <div class="color-grid">
-        <label class="color-control"><span>Page</span><input id="base" type="color" value="#282025"><code id="baseValue">#282025</code></label>
-        <label class="color-control"><span>Cards</span><input id="surface" type="color" value="#553D44"><code id="surfaceValue">#553D44</code></label>
-        <label class="color-control"><span>Accent</span><input id="accent" type="color" value="#ECA8BD"><code id="accentValue">#ECA8BD</code></label>
-        <label class="color-control"><span>Text</span><input id="text" type="color" value="#CDD6F4"><code id="textValue">#CDD6F4</code></label>
+      <p class="hint">Choose a saved color for an area. Save more colors below.</p>
+      <div id="colorLibrary" class="color-library"></div>
+      <div class="add-color-row">
+        <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
+        <input id="newColorName" class="text-input" type="text" maxlength="32" placeholder="Name this color">
+        <button id="saveColor" class="small-button" type="button">Save color</button>
       </div>
-      <button id="saveTheme" class="primary-button" type="button">Save theme for this site</button>
       <p id="status" class="status" aria-live="polite"></p>
     </section>
 
-    <section class="combo-section">
-      <div class="section-heading">
-        <h2>Saved color combos</h2>
-        <span id="paletteCount" class="count-pill">1</span>
-      </div>
-      <div id="paletteList" class="palette-list"></div>
-      <div class="palette-save-row">
-        <input id="paletteName" class="text-input" type="text" maxlength="32" placeholder="Name this combo">
-        <button id="savePalette" class="small-button" type="button">Save combo</button>
-      </div>
-    </section>
-
-    <section class="target-section">
+    <section class="section areas-section">
       <div class="section-heading"><h2>Picked areas</h2></div>
-      <p class="hint">Kaleido only changes areas you pick. Save this site's theme first, then pick an area and choose its color.</p>
-      <button id="pickArea" class="secondary-button" type="button">Pick an area on this page</button>
+      <p class="hint">Pick an area on the page, confirm it, then choose one of your colors.</p>
+      <button id="pickArea" class="primary-button" type="button">Pick an area on this page</button>
       <div id="targetList" class="target-list"></div>
     </section>
 
-    <section class="saved-section">
-      <details id="sitesDetails">
-        <summary class="sites-summary"><span>Your sites</span><span id="siteCount" class="count-pill">0</span></summary>
-        <div id="savedList" class="saved-list"></div>
-        <p id="emptyState" class="empty-state">Your saved themes will appear here.</p>
-      </details>
-    </section>
-
     <footer>
-      <span>Theme settings stay on this device.</span>
+      <span>Your colors and picked areas stay on this device.</span>
       <a href="privacy.html" target="_blank">Privacy</a>
     </footer>
   </main>
