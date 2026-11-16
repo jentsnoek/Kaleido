@@ -38,6 +38,22 @@ function cleanRules(rules, colors) {
   }).filter(Boolean);
 }
 
+function summarizeGroups(rules) {
+  const groups = [];
+  const byId = new Map();
+  for (const rule of Array.isArray(rules) ? rules : []) {
+    if (!rule || typeof rule.groupId !== "string" || !rule.groupId) continue;
+    let group = byId.get(rule.groupId);
+    if (!group) {
+      group = { id: rule.groupId, name: `Group ${groups.length + 1}`, colorId: rule.colorId || "", count: 0 };
+      byId.set(rule.groupId, group);
+      groups.push(group);
+    }
+    group.count += 1;
+  }
+  return groups;
+}
+
 function matchingDomain(host, siteRules) {
   return Object.keys(siteRules || {})
     .filter(domain => Array.isArray(siteRules[domain]) && (host === domain || host.endsWith("." + domain)))
@@ -197,38 +213,56 @@ async function savePickedAreas(message, sender, sendResponse) {
     sendResponse({ ok: false });
     return;
   }
-  const colorId = String(message.colorId || "");
+  const requestedGroupId = typeof message.groupId === "string" ? message.groupId.trim() : "";
+  let groupId = requestedGroupId;
+  let colorId = String(message.colorId || "");
   const targets = Array.isArray(message.targets) ? message.targets.slice(0, 100).map(target => {
     const selector = typeof target?.selector === "string" ? target.selector.trim() : "";
     const label = typeof target?.label === "string" ? target.label.slice(0, 80) : selector.slice(0, 80);
     return { selector, label };
   }).filter(target => target.selector && target.selector.length <= 1000) : [];
-  if (!targets.length || !colorId) {
+  if (!targets.length) {
     sendResponse({ ok: false });
     return;
   }
 
   const domain = normalizeHost(url.hostname);
   const { siteRules = {}, colors = [] } = await chrome.storage.local.get(["siteRules", "colors"]);
+  const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
+  if (groupId) {
+    const existingGroup = rules.find(rule => rule.groupId === groupId);
+    if (!existingGroup) {
+      sendResponse({ ok: false });
+      return;
+    }
+    colorId = existingGroup.colorId;
+  } else {
+    if (!colorId || !cleanColorLibrary(colors).some(color => color.id === colorId)) {
+      sendResponse({ ok: false });
+      return;
+    }
+    groupId = `group-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  }
   if (!cleanColorLibrary(colors).some(color => color.id === colorId)) {
     sendResponse({ ok: false });
     return;
   }
-  const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
   for (const target of targets) {
     const existing = rules.find(rule => rule.selector === target.selector);
     if (existing) {
       existing.colorId = colorId;
       existing.label = target.label;
+      existing.groupId = groupId;
       delete existing.role;
     } else {
-      rules.push({ ...target, colorId });
+      rules.push({ ...target, colorId, groupId });
     }
   }
   siteRules[domain] = rules;
-  await chrome.storage.local.set({ siteRules });
+  await chrome.storage.local.set({ siteRules, activeColorId: colorId });
   await applyToTab(sender.tab);
-  sendResponse({ ok: true, domain, rules, count: targets.length });
+  const groupName = summarizeGroups(rules).find(group => group.id === groupId)?.name || "Group";
+  sendResponse({ ok: true, domain, rules, count: targets.length, groupId, colorId, groupName });
 }
 
 chrome.runtime.onInstalled.addListener(() => { void refreshOpenTabs(); });
@@ -261,8 +295,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "kaleido-get-colors") {
-    chrome.storage.local.get(["colors", "activeColorId"]).then(result => {
-      sendResponse({ colors: cleanColorLibrary(result.colors), activeColorId: result.activeColorId || "" });
+    chrome.storage.local.get(["colors", "activeColorId", "siteRules"]).then(result => {
+      let domain = "";
+      try { domain = normalizeHost(new URL(sender.tab?.url || "").hostname); } catch { /* No website context. */ }
+      sendResponse({
+        colors: cleanColorLibrary(result.colors),
+        activeColorId: result.activeColorId || "",
+        groups: summarizeGroups(result.siteRules?.[domain])
+      });
     }).catch(() => sendResponse({ colors: [], activeColorId: "" }));
     return true;
   }
