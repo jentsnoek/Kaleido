@@ -19,11 +19,7 @@ function cleanColorLibrary(colors) {
   if (!Array.isArray(colors)) return [];
   return colors.filter(color =>
     color && typeof color.id === "string" && color.id.length <= 80 && isColor(color.value)
-  ).map(color => ({
-    id: color.id,
-    name: typeof color.name === "string" ? color.name.slice(0, 32) : "Saved color",
-    value: color.value.toUpperCase()
-  }));
+  ).map(color => ({ id: color.id, value: color.value.toUpperCase() }));
 }
 
 function cleanRules(rules, colors) {
@@ -100,9 +96,10 @@ function applyKaleidoRules(rules) {
 
   const oldStyle = document.querySelector("style[data-kaleido-styles], style[data-kaleido-theme]");
   if (oldStyle) oldStyle.remove();
+  const isValidColor = value => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
   const safeRules = Array.isArray(rules) ? rules.filter(rule =>
     rule && typeof rule.selector === "string" && rule.selector.length <= 1000 &&
-    isColor(rule.value)
+    isValidColor(rule.value)
   ) : [];
   if (!safeRules.length) return;
 
@@ -125,7 +122,7 @@ function applyKaleidoRules(rules) {
   const style = document.createElement("style");
   style.setAttribute("data-kaleido-styles", "true");
   style.textContent = safeRules.map((rule, index) =>
-    `[data-kaleido-target="${index}"] { background-color: ${rule.value} !important; }`
+    `[data-kaleido-target="${index}"] { background-color: ${rule.value} !important; background-image: none !important; }`
   ).join("");
   (document.head || document.documentElement).appendChild(style);
 
@@ -188,7 +185,7 @@ async function clearPreview(message, sendResponse) {
   }
 }
 
-async function savePickedArea(message, sender, sendResponse) {
+async function savePickedAreas(message, sender, sendResponse) {
   let url;
   try {
     url = new URL(sender.tab?.url || "");
@@ -200,10 +197,13 @@ async function savePickedArea(message, sender, sendResponse) {
     sendResponse({ ok: false });
     return;
   }
-  const selector = String(message.selector || "").trim();
   const colorId = String(message.colorId || "");
-  const label = String(message.label || selector).slice(0, 80);
-  if (!selector || selector.length > 1000 || !colorId) {
+  const targets = Array.isArray(message.targets) ? message.targets.slice(0, 100).map(target => {
+    const selector = typeof target?.selector === "string" ? target.selector.trim() : "";
+    const label = typeof target?.label === "string" ? target.label.slice(0, 80) : selector.slice(0, 80);
+    return { selector, label };
+  }).filter(target => target.selector && target.selector.length <= 1000) : [];
+  if (!targets.length || !colorId) {
     sendResponse({ ok: false });
     return;
   }
@@ -215,17 +215,20 @@ async function savePickedArea(message, sender, sendResponse) {
     return;
   }
   const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
-  const existing = rules.find(rule => rule.selector === selector);
-  if (existing) {
-    existing.colorId = colorId;
-    existing.label = label;
-    delete existing.role;
-  } else {
-    rules.push({ selector, label, colorId });
+  for (const target of targets) {
+    const existing = rules.find(rule => rule.selector === target.selector);
+    if (existing) {
+      existing.colorId = colorId;
+      existing.label = target.label;
+      delete existing.role;
+    } else {
+      rules.push({ ...target, colorId });
+    }
   }
   siteRules[domain] = rules;
   await chrome.storage.local.set({ siteRules });
-  sendResponse({ ok: true, domain, rules });
+  await applyToTab(sender.tab);
+  sendResponse({ ok: true, domain, rules, count: targets.length });
 }
 
 chrome.runtime.onInstalled.addListener(() => { void refreshOpenTabs(); });
@@ -253,8 +256,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void clearPreview(message, sendResponse);
     return true;
   }
-  if (message.type === "kaleido-target-picked") {
-    void savePickedArea(message, sender, sendResponse);
+  if (message.type === "kaleido-targets-picked") {
+    void savePickedAreas(message, sender, sendResponse);
     return true;
   }
   if (message.type === "kaleido-get-colors") {
