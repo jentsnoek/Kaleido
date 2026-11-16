@@ -4,7 +4,13 @@ const DEFAULT_COLORS = {
   accent: "#ECA8BD",
   text: "#CDD6F4"
 };
-
+const ALL_SITES_PATTERN = "*://*/*";
+const BUILT_IN_PALETTE = {
+  id: "my-plum",
+  name: "My Plum",
+  colors: DEFAULT_COLORS,
+  builtIn: true
+};
 const fields = ["base", "surface", "accent", "text"];
 const domainInput = document.getElementById("domain");
 const nameInput = document.getElementById("siteName");
@@ -14,9 +20,22 @@ const savedList = document.getElementById("savedList");
 const emptyState = document.getElementById("emptyState");
 const countNode = document.getElementById("siteCount");
 const siteState = document.getElementById("siteState");
+const paletteList = document.getElementById("paletteList");
+const paletteCount = document.getElementById("paletteCount");
+const paletteNameInput = document.getElementById("paletteName");
+const savePaletteButton = document.getElementById("savePalette");
+const autoColorInput = document.getElementById("autoColor");
+const pickAreaButton = document.getElementById("pickArea");
+const targetList = document.getElementById("targetList");
 
 let activeHost = "";
+let activeTabId = null;
 let themes = {};
+let palettes = [];
+let siteRules = {};
+let previewDirty = false;
+let previewTimer = null;
+let hasAllSitesPermission = false;
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
@@ -46,6 +65,10 @@ function findTheme(host) {
     .sort((a, b) => b.domain.length - a.domain.length)[0] || null;
 }
 
+function activeRuleDomain() {
+  return findTheme(activeHost)?.domain || activeHost;
+}
+
 function permissionPattern(domain) {
   const host = domain.includes(".") ? "*." + domain : domain;
   return "*://" + host + "/*";
@@ -65,6 +88,15 @@ function currentColors() {
   return Object.fromEntries(fields.map(key => [key, document.getElementById(key).value.toUpperCase()]));
 }
 
+function validPaletteColors(colors) {
+  return colors && fields.every(key => typeof colors[key] === "string" && /^#[0-9a-fA-F]{6}$/.test(colors[key]));
+}
+
+function sameColors(first, second) {
+  return validPaletteColors(first) && validPaletteColors(second) &&
+    fields.every(key => first[key].toUpperCase() === second[key].toUpperCase());
+}
+
 async function refreshTabs() {
   try {
     await chrome.runtime.sendMessage({ type: "kaleido-refresh" });
@@ -78,6 +110,25 @@ function showStatus(message, isError = false) {
   statusNode.style.color = isError ? "#F0A1A7" : "#ECA8BD";
 }
 
+function schedulePreview() {
+  if (!activeTabId || !activeHost) return;
+  previewDirty = true;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(async () => {
+    try {
+      await chrome.runtime.sendMessage({
+        type: "kaleido-preview",
+        tabId: activeTabId,
+        colors: currentColors(),
+        rules: siteRules[activeRuleDomain()] || [],
+        autoEnabled: autoColorInput.checked
+      });
+    } catch {
+      // Chrome internal pages cannot be previewed.
+    }
+  }, 55);
+}
+
 function renderList() {
   savedList.replaceChildren();
   const entries = Object.values(themes).sort((a, b) => a.domain.localeCompare(b.domain));
@@ -87,7 +138,6 @@ function renderList() {
   for (const profile of entries) {
     const card = document.createElement("div");
     card.className = "site-card";
-
     const info = document.createElement("div");
     info.className = "site-info";
     const title = document.createElement("div");
@@ -100,7 +150,6 @@ function renderList() {
 
     const actions = document.createElement("div");
     actions.className = "site-actions";
-
     const toggle = document.createElement("input");
     toggle.className = "toggle";
     toggle.type = "checkbox";
@@ -121,9 +170,10 @@ function renderList() {
     edit.addEventListener("click", () => {
       domainInput.value = profile.domain;
       nameInput.value = profile.name || defaultName(profile.domain);
+      autoColorInput.checked = profile.autoEnabled !== false;
       setColors(profile.colors);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      showStatus("Editing " + profile.domain);
+      if (profile.domain === activeHost) schedulePreview();
+      showStatus("Previewing " + profile.domain + " - save to keep these changes.");
     });
 
     const remove = document.createElement("button");
@@ -139,7 +189,7 @@ function renderList() {
       try {
         await chrome.permissions.remove({ origins: [permissionPattern(profile.domain)] });
       } catch {
-        // A permission may already have been removed in Chrome settings.
+        // A site-specific permission may not exist anymore.
       }
       showStatus("Removed " + profile.domain);
       renderList();
@@ -151,6 +201,126 @@ function renderList() {
   }
 }
 
+function renderPalettes() {
+  paletteList.replaceChildren();
+  paletteCount.textContent = String(palettes.length);
+  for (const palette of palettes) {
+    const card = document.createElement("div");
+    card.className = "palette-card";
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "palette-main";
+    apply.title = "Preview this color combo on the current page";
+    const name = document.createElement("div");
+    name.className = "palette-name";
+    name.textContent = palette.name;
+    const swatches = document.createElement("div");
+    swatches.className = "palette-swatches";
+    for (const key of fields) {
+      const swatch = document.createElement("span");
+      swatch.className = "palette-swatch";
+      swatch.style.backgroundColor = palette.colors[key];
+      swatch.title = `${key}: ${palette.colors[key]}`;
+      swatches.appendChild(swatch);
+    }
+    apply.append(name, swatches);
+    apply.addEventListener("click", () => {
+      setColors(palette.colors);
+      schedulePreview();
+      showStatus(`Previewing "${palette.name}". Save the site theme to keep it.`);
+    });
+    const actions = document.createElement("div");
+    actions.className = "palette-actions";
+    if (!palette.builtIn) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete-button";
+      remove.textContent = "�";
+      remove.title = "Delete palette";
+      remove.setAttribute("aria-label", "Delete palette " + palette.name);
+      remove.addEventListener("click", async () => {
+        palettes = palettes.filter(item => item.id !== palette.id);
+        await chrome.storage.local.set({ palettes });
+        renderPalettes();
+      });
+      actions.appendChild(remove);
+    }
+    card.append(apply, actions);
+    paletteList.appendChild(card);
+  }
+}
+
+async function savePalette() {
+  const name = paletteNameInput.value.trim();
+  if (!name) {
+    showStatus("Name this color combo first.", true);
+    paletteNameInput.focus();
+    return;
+  }
+  const palette = {
+    id: `palette-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    name: name.slice(0, 32),
+    colors: currentColors()
+  };
+  palettes.push(palette);
+  await chrome.storage.local.set({ palettes });
+  paletteNameInput.value = "";
+  renderPalettes();
+  showStatus(`Saved "${palette.name}" in your color combos.`);
+}
+
+function renderTargets() {
+  targetList.replaceChildren();
+  if (!activeHost) {
+    targetList.innerHTML = '<p class="target-empty">Open a website to pick areas.</p>';
+    return;
+  }
+  const ruleDomain = activeRuleDomain();
+  const rules = siteRules[ruleDomain] || [];
+  if (!rules.length) {
+    targetList.innerHTML = '<p class="target-empty">No picked areas for this site yet.</p>';
+    return;
+  }
+  const roleNames = { base: "Page color", surface: "Card color", accent: "Accent color", text: "Text color", ignore: "Ignore automatic matching" };
+  for (const rule of rules) {
+    const card = document.createElement("div");
+    card.className = "target-card";
+    const info = document.createElement("div");
+    info.className = "target-name";
+    info.textContent = rule.label || rule.selector;
+    const role = document.createElement("span");
+    role.className = "target-role";
+    role.textContent = roleNames[rule.role] || rule.role;
+    info.appendChild(role);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "�";
+    remove.title = "Remove picked area";
+    remove.setAttribute("aria-label", "Remove " + (rule.label || "picked area"));
+    remove.addEventListener("click", async () => {
+      siteRules[ruleDomain] = rules.filter(item => item.selector !== rule.selector);
+      await chrome.storage.local.set({ siteRules });
+      await refreshTabs();
+      renderTargets();
+    });
+    card.append(info, remove);
+    targetList.appendChild(card);
+  }
+}
+
+async function pickArea() {
+  if (!activeTabId || !activeHost) {
+    showStatus("Open the website you want to edit first.", true);
+    return;
+  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
+    showStatus("Click an area on the page, then choose its color role.");
+  } catch {
+    showStatus("This page does not allow Kaleido's picker.", true);
+  }
+}
+
 async function saveTheme() {
   const host = normalizeHost(domainInput.value);
   if (!validHost(host)) {
@@ -158,45 +328,74 @@ async function saveTheme() {
     return;
   }
 
-  const pattern = permissionPattern(host);
-  let granted = false;
-  try {
-    granted = await chrome.permissions.request({ origins: [pattern] });
-  } catch {
-    granted = false;
-  }
-  if (!granted) {
-    showStatus("Kaleido needs site access to apply this theme.", true);
-    return;
+  if (!hasAllSitesPermission) {
+    try {
+      hasAllSitesPermission = await chrome.permissions.request({ origins: [ALL_SITES_PATTERN] });
+    } catch {
+      hasAllSitesPermission = false;
+    }
+    if (!hasAllSitesPermission) {
+      showStatus("Kaleido needs all-sites access to apply themes without asking on every website.", true);
+      return;
+    }
   }
 
-  const name = nameInput.value.trim() || defaultName(host);
   themes[host] = {
     domain: host,
-    name,
+    name: nameInput.value.trim() || defaultName(host),
     enabled: true,
+    autoEnabled: autoColorInput.checked,
     colors: currentColors()
   };
   await chrome.storage.local.set({ themes });
   await refreshTabs();
+  previewDirty = false;
   renderList();
-  showStatus(host === activeHost ? "Saved and applied to this site." : "Saved. Open " + host + " to see its theme.");
+  siteState.textContent = "All sites enabled";
+  showStatus(host === activeHost ? "Saved and applied to this site." : `Saved. Open ${host} to see its theme.`);
 }
 
 async function initialize() {
   fields.forEach(key => {
     document.getElementById(key).addEventListener("input", event => {
       document.getElementById(key + "Value").textContent = event.target.value.toUpperCase();
+      schedulePreview();
     });
   });
+  autoColorInput.addEventListener("change", schedulePreview);
+  saveButton.addEventListener("click", saveTheme);
+  savePaletteButton.addEventListener("click", savePalette);
+  pickAreaButton.addEventListener("click", pickArea);
 
-  const result = await chrome.storage.local.get("themes");
+  const result = await chrome.storage.local.get(["themes", "palettes", "siteRules"]);
   themes = result.themes || {};
+  palettes = Array.isArray(result.palettes)
+    ? result.palettes.filter(item => item && typeof item.id === "string" && typeof item.name === "string" && validPaletteColors(item.colors))
+    : [];
+  let palettesChanged = !Array.isArray(result.palettes);
+  if (!palettes.some(item => item.id === BUILT_IN_PALETTE.id)) {
+    palettes.unshift(BUILT_IN_PALETTE);
+    palettesChanged = true;
+  }
+  for (const profile of Object.values(themes)) {
+    if (!profile?.domain || !validPaletteColors(profile.colors)) continue;
+    if (palettes.some(item => sameColors(item.colors, profile.colors))) continue;
+    palettes.push({
+      id: `site-colors-${normalizeHost(profile.domain)}`,
+      name: `${profile.name || profile.domain} colors`.slice(0, 32),
+      colors: Object.fromEntries(fields.map(key => [key, profile.colors[key].toUpperCase()]))
+    });
+    palettesChanged = true;
+  }
+  siteRules = result.siteRules || {};
+  hasAllSitesPermission = await chrome.permissions.contains({ origins: [ALL_SITES_PATTERN] });
+  if (palettesChanged || result.palettes?.length !== palettes.length) await chrome.storage.local.set({ palettes });
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let tabUrl = null;
   try {
     tabUrl = tab && tab.url ? new URL(tab.url) : null;
+    activeTabId = tab && Number.isInteger(tab.id) ? tab.id : null;
   } catch {
     tabUrl = null;
   }
@@ -204,17 +403,20 @@ async function initialize() {
   if (tabUrl && (tabUrl.protocol === "http:" || tabUrl.protocol === "https:")) {
     activeHost = normalizeHost(tabUrl.hostname);
     domainInput.value = activeHost;
-    siteState.textContent = "Web page";
+    siteState.textContent = hasAllSitesPermission ? "All sites enabled" : "Web page";
     const profile = findTheme(activeHost);
     if (profile) {
       nameInput.value = profile.name || defaultName(profile.domain);
+      autoColorInput.checked = profile.autoEnabled !== false;
       setColors(profile.colors);
-      siteState.textContent = profile.enabled ? "Theme saved" : "Theme off";
+      if (profile.enabled) siteState.textContent = "Theme saved";
+      else siteState.textContent = "Theme off";
     } else {
       nameInput.value = defaultName(activeHost);
       setColors(DEFAULT_COLORS);
     }
   } else {
+    activeTabId = null;
     siteState.textContent = "Open a website";
     domainInput.value = "";
     nameInput.value = "";
@@ -222,7 +424,20 @@ async function initialize() {
   }
 
   renderList();
+  renderPalettes();
+  renderTargets();
 }
 
-saveButton.addEventListener("click", saveTheme);
+window.addEventListener("pagehide", () => {
+  clearTimeout(previewTimer);
+  if (previewDirty && activeTabId) {
+    try {
+      void chrome.runtime.sendMessage({ type: "kaleido-clear-preview", tabId: activeTabId });
+    } catch {
+      // The popup may close before the preview can be restored.
+    }
+  }
+});
+
 initialize().catch(() => showStatus("Kaleido could not load this page.", true));
+
