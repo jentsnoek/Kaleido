@@ -1,6 +1,6 @@
 # Kaleido
 
-Kaleido lets you recolor specific areas of websites yourself. Pick one or more areas, confirm the highlights, and choose a saved color for the group. It does not guess which parts of a page to change.
+Kaleido lets you recolor specific areas of websites yourself. Pick one or more areas, confirm the highlights, and choose a saved color for the group. You can change the group's color, add areas, or remove individual areas later. It does not guess which parts of a page to change.
 
 ## Install the development build
 
@@ -8,13 +8,13 @@ Kaleido lets you recolor specific areas of websites yourself. Pick one or more a
 2. Open `chrome://extensions` in Chrome or `vivaldi://extensions` in Vivaldi.
 3. Turn on **Developer mode**.
 4. Choose **Load unpacked** and select the extracted Kaleido folder containing `manifest.json`.
-5. Open a website and choose **Pick an area on this page**.
+5. Open a website and choose **Create a group**.
 
 The first time you pick an area, the browser asks for website access. Kaleido uses that permission to apply the saved areas on websites you choose. You can revoke it in the browser's extension settings.
 
 ## Pick and color an area
 
-Move over the page to see the highlighted area. Click each area you want to change, confirm the highlighted selection, then choose one saved color for that group. Kaleido applies and saves the color for the current website. To change it later, use the color menu beside an area in the popup. Add, edit, and remove individual colors in the **Colors** section.
+Move over the page to see the highlighted area. Click each area you want to change, confirm the highlighted selection, then choose a saved color square for that group. Kaleido applies and saves the color for the current website. In the popup, use the group's color squares to recolor every area together, add more areas to the group, or remove individual areas. Add, edit, and remove saved colors in the **Colors** section.
 
 Your color library and picked areas are stored in the browser's local extension storage. Kaleido does not send page data or settings to a server. See [`privacy.html`](./privacy.html).
 
