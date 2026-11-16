@@ -461,6 +461,36 @@ function base64UrlToBytes(value) {
   return Uint8Array.from(binary, char => char.charCodeAt(0));
 }
 
+
+async function compressTransferBytes(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function decompressTransferBytes(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > 20000000) {
+      await reader.cancel();
+      throw new Error("The settings code is too large.");
+    }
+    chunks.push(value);
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
 async function deriveTransferKey(passphrase, salt) {
   const material = await crypto.subtle.importKey(
     "raw",
@@ -496,13 +526,19 @@ async function exportSettings() {
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const key = await deriveTransferKey(passphrase, salt);
+    let payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
+    let codeVersion = "KAL1";
+    if (typeof CompressionStream !== "undefined") {
+      payloadBytes = await compressTransferBytes(payloadBytes);
+      codeVersion = "KAL2";
+    }
     const ciphertext = await crypto.subtle.encrypt(
       { name: "AES-GCM", iv },
       key,
-      new TextEncoder().encode(JSON.stringify(payload))
+      payloadBytes
     );
     transferCodeInput.value = [
-      "KAL1",
+      codeVersion,
       bytesToBase64Url(salt),
       bytesToBase64Url(iv),
       bytesToBase64Url(new Uint8Array(ciphertext))
@@ -580,7 +616,7 @@ async function importSettings() {
     showStatus("Enter the passphrase used to create the code.", true);
     return;
   }
-  if (!code.startsWith("KAL1.") || code.length > 4000000) {
+  if ((!code.startsWith("KAL1.") && !code.startsWith("KAL2.")) || code.length > 20000000) {
     showStatus("Paste a Kaleido transfer code into the box first.", true);
     return;
   }
@@ -588,14 +624,17 @@ async function importSettings() {
 
   try {
     const [prefix, saltText, ivText, ciphertextText, extra] = code.split(".");
-    if (prefix !== "KAL1" || !saltText || !ivText || !ciphertextText || extra) throw new Error("This code is not valid.");
+    if ((prefix !== "KAL1" && prefix !== "KAL2") || !saltText || !ivText || !ciphertextText || extra) throw new Error("This code is not valid.");
     const salt = base64UrlToBytes(saltText);
     const iv = base64UrlToBytes(ivText);
     const ciphertext = base64UrlToBytes(ciphertextText);
     if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) throw new Error("This code is not valid.");
     const key = await deriveTransferKey(passphrase, salt);
     const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
-    const data = JSON.parse(new TextDecoder().decode(decrypted));
+    const plainBytes = prefix === "KAL2"
+      ? await decompressTransferBytes(new Uint8Array(decrypted))
+      : new Uint8Array(decrypted);
+    const data = JSON.parse(new TextDecoder().decode(plainBytes));
     const imported = validateImportedSettings(data);
 
     colors = DEFAULT_COLORS.map(color => ({ ...color }));
