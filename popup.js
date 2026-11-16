@@ -24,7 +24,6 @@ const paletteList = document.getElementById("paletteList");
 const paletteCount = document.getElementById("paletteCount");
 const paletteNameInput = document.getElementById("paletteName");
 const savePaletteButton = document.getElementById("savePalette");
-const autoColorInput = document.getElementById("autoColor");
 const pickAreaButton = document.getElementById("pickArea");
 const targetList = document.getElementById("targetList");
 
@@ -120,8 +119,7 @@ function schedulePreview() {
         type: "kaleido-preview",
         tabId: activeTabId,
         colors: currentColors(),
-        rules: siteRules[activeRuleDomain()] || [],
-        autoEnabled: autoColorInput.checked
+        rules: siteRules[activeRuleDomain()] || []
       });
     } catch {
       // Chrome internal pages cannot be previewed.
@@ -170,16 +168,16 @@ function renderList() {
     edit.addEventListener("click", () => {
       domainInput.value = profile.domain;
       nameInput.value = profile.name || defaultName(profile.domain);
-      autoColorInput.checked = profile.autoEnabled !== false;
       setColors(profile.colors);
       if (profile.domain === activeHost) schedulePreview();
+      document.getElementById("sitesDetails").open = false;
       showStatus("Previewing " + profile.domain + " - save to keep these changes.");
     });
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "delete-button";
-    remove.textContent = "�";
+    remove.textContent = "Delete";
     remove.title = "Remove " + profile.domain;
     remove.setAttribute("aria-label", "Remove " + profile.domain);
     remove.addEventListener("click", async () => {
@@ -235,7 +233,7 @@ function renderPalettes() {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "delete-button";
-      remove.textContent = "�";
+      remove.textContent = "Delete";
       remove.title = "Delete palette";
       remove.setAttribute("aria-label", "Delete palette " + palette.name);
       remove.addEventListener("click", async () => {
@@ -281,29 +279,45 @@ function renderTargets() {
     targetList.innerHTML = '<p class="target-empty">No picked areas for this site yet.</p>';
     return;
   }
-  const roleNames = { base: "Page color", surface: "Card color", accent: "Accent color", text: "Text color", ignore: "Ignore automatic matching" };
+  const roleNames = { base: "Page color", surface: "Card color", accent: "Accent color", text: "Text color" };
   for (const rule of rules) {
     const card = document.createElement("div");
     card.className = "target-card";
     const info = document.createElement("div");
     info.className = "target-name";
     info.textContent = rule.label || rule.selector;
-    const role = document.createElement("span");
-    role.className = "target-role";
-    role.textContent = roleNames[rule.role] || rule.role;
-    info.appendChild(role);
+    const roleSelect = document.createElement("select");
+    roleSelect.setAttribute("aria-label", `Color for ${rule.label || "picked area"}`);
+    for (const role of ["base", "surface", "text", "accent"]) {
+      const option = document.createElement("option");
+      option.value = role;
+      option.textContent = roleNames[role];
+      roleSelect.appendChild(option);
+    }
+    roleSelect.value = roleNames[rule.role] ? rule.role : "surface";
+    roleSelect.addEventListener("change", async () => {
+      siteRules[ruleDomain] = (siteRules[ruleDomain] || []).map(item =>
+        item.selector === rule.selector ? { ...item, role: roleSelect.value } : item
+      );
+      await chrome.storage.local.set({ siteRules });
+      await refreshTabs();
+      schedulePreview();
+      showStatus("Updated this area's color role.");
+    });
     const remove = document.createElement("button");
     remove.type = "button";
-    remove.textContent = "�";
+    remove.className = "delete-button";
+    remove.textContent = "Delete";
     remove.title = "Remove picked area";
     remove.setAttribute("aria-label", "Remove " + (rule.label || "picked area"));
     remove.addEventListener("click", async () => {
-      siteRules[ruleDomain] = rules.filter(item => item.selector !== rule.selector);
+      siteRules[ruleDomain] = (siteRules[ruleDomain] || []).filter(item => item.selector !== rule.selector);
       await chrome.storage.local.set({ siteRules });
       await refreshTabs();
       renderTargets();
+      schedulePreview();
     });
-    card.append(info, remove);
+    card.append(info, roleSelect, remove);
     targetList.appendChild(card);
   }
 }
@@ -344,7 +358,6 @@ async function saveTheme() {
     domain: host,
     name: nameInput.value.trim() || defaultName(host),
     enabled: true,
-    autoEnabled: autoColorInput.checked,
     colors: currentColors()
   };
   await chrome.storage.local.set({ themes });
@@ -362,7 +375,6 @@ async function initialize() {
       schedulePreview();
     });
   });
-  autoColorInput.addEventListener("change", schedulePreview);
   saveButton.addEventListener("click", saveTheme);
   savePaletteButton.addEventListener("click", savePalette);
   pickAreaButton.addEventListener("click", pickArea);
@@ -387,7 +399,11 @@ async function initialize() {
     });
     palettesChanged = true;
   }
-  siteRules = result.siteRules || {};
+  const allowedRoles = new Set(["base", "surface", "accent", "text"]);
+  siteRules = Object.fromEntries(Object.entries(result.siteRules || {}).map(([domain, rules]) => [
+    domain,
+    Array.isArray(rules) ? rules.filter(rule => rule && typeof rule.selector === "string" && allowedRoles.has(rule.role)) : []
+  ]));
   hasAllSitesPermission = await chrome.permissions.contains({ origins: [ALL_SITES_PATTERN] });
   if (palettesChanged || result.palettes?.length !== palettes.length) await chrome.storage.local.set({ palettes });
 
@@ -407,7 +423,6 @@ async function initialize() {
     const profile = findTheme(activeHost);
     if (profile) {
       nameInput.value = profile.name || defaultName(profile.domain);
-      autoColorInput.checked = profile.autoEnabled !== false;
       setColors(profile.colors);
       if (profile.enabled) siteState.textContent = "Theme saved";
       else siteState.textContent = "Theme off";
