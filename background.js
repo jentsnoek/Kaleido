@@ -6,7 +6,7 @@ const DEFAULT_COLORS = {
 };
 
 const ALL_SITES_PATTERN = "*://*/*";
-const PICKED_ROLES = new Set(["base", "surface", "accent", "text", "ignore"]);
+const PICKED_ROLES = new Set(["base", "surface", "accent", "text"]);
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
@@ -78,26 +78,23 @@ async function applyToTab(tab) {
   const stored = findTheme(host, themes);
   let colors = null;
   let rules = [];
-  let autoEnabled = false;
-
   if (stored && stored.enabled && await hasSiteAccess(stored.domain)) {
     colors = validColors(stored.colors) || DEFAULT_COLORS;
     rules = cleanRules(siteRules[stored.domain]);
-    autoEnabled = stored.autoEnabled !== false;
   }
 
   try {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: applyKaleidoTheme,
-      args: [colors, rules, autoEnabled]
+      args: [colors, rules]
     });
   } catch {
     // Chrome internal pages and pages without site access cannot be changed.
   }
 }
 
-function applyKaleidoTheme(colors, rules, autoEnabled) {
+function applyKaleidoTheme(colors, rules) {
   const styleSelector = "style[data-kaleido-theme]";
   const oldStyle = document.querySelector(styleSelector);
   if (window.__kaleidoObserver) {
@@ -105,21 +102,21 @@ function applyKaleidoTheme(colors, rules, autoEnabled) {
     window.__kaleidoObserver = null;
   }
 
-  const autoMarks = "[data-kaleido-bg], [data-kaleido-fg], [data-kaleido-border], [data-kaleido-link]";
-  const clearAutoMarks = element => {
+  const oldMarkers = [
+    "[data-kaleido-picked-role]", "[data-kaleido-root]", "[data-kaleido-bg]",
+    "[data-kaleido-fg]", "[data-kaleido-border]", "[data-kaleido-link]"
+  ].join(",");
+  document.querySelectorAll(oldMarkers).forEach(element => {
+    element.removeAttribute("data-kaleido-picked-role");
+    element.removeAttribute("data-kaleido-root");
     element.removeAttribute("data-kaleido-bg");
     element.removeAttribute("data-kaleido-fg");
     element.removeAttribute("data-kaleido-border");
     element.removeAttribute("data-kaleido-link");
-  };
+  });
 
   if (!colors) {
     if (oldStyle) oldStyle.remove();
-    document.querySelectorAll(`${autoMarks}, [data-kaleido-picked-role], [data-kaleido-root]`).forEach(element => {
-      clearAutoMarks(element);
-      element.removeAttribute("data-kaleido-picked-role");
-      element.removeAttribute("data-kaleido-root");
-    });
     return;
   }
 
@@ -129,11 +126,9 @@ function applyKaleidoTheme(colors, rules, autoEnabled) {
     safe[key] = typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_COLORS[key];
   }
   const safeRules = Array.isArray(rules) ? rules.filter(rule =>
-    rule && typeof rule.selector === "string" &&
-    ["base", "surface", "accent", "text", "ignore"].includes(rule.role)
+    rule && typeof rule.selector === "string" && rule.selector.length <= 1000 &&
+    ["base", "surface", "accent", "text"].includes(rule.role)
   ) : [];
-
-  document.querySelectorAll("[data-kaleido-picked-role]").forEach(element => element.removeAttribute("data-kaleido-picked-role"));
 
   function applyRules(root) {
     for (const rule of safeRules) {
@@ -145,20 +140,17 @@ function applyKaleidoTheme(colors, rules, autoEnabled) {
           root.querySelectorAll(rule.selector).forEach(element => element.setAttribute("data-kaleido-picked-role", rule.role));
         }
       } catch {
-        // A selector may stop being valid after the website changes its markup.
+        // A selector may stop matching after the website changes its markup.
       }
     }
   }
 
-  applyRules(document);
-  document.querySelectorAll("html, body").forEach(element => {
-    if (autoEnabled && !element.closest('[data-kaleido-picked-role="ignore"]')) {
-      element.setAttribute("data-kaleido-root", "true");
-    } else {
-      element.removeAttribute("data-kaleido-root");
-    }
-  });
+  if (!safeRules.length) {
+    if (oldStyle) oldStyle.remove();
+    return;
+  }
 
+  applyRules(document);
   const style = oldStyle || document.createElement("style");
   style.setAttribute("data-kaleido-theme", "true");
   style.textContent =
@@ -166,103 +158,28 @@ function applyKaleidoTheme(colors, rules, autoEnabled) {
     "; --kaleido-surface: " + safe.surface +
     "; --kaleido-accent: " + safe.accent +
     "; --kaleido-text: " + safe.text + "; }" +
-    "html[data-kaleido-root='true'], body[data-kaleido-root='true'] { color-scheme: dark !important; background-color: var(--kaleido-base) !important; color: var(--kaleido-text) !important; }" +
-    "[data-kaleido-bg='true'] { background-color: var(--kaleido-surface) !important; }" +
-    "[data-kaleido-fg='true'] { color: var(--kaleido-text) !important; }" +
-    "[data-kaleido-border='true'] { border-color: color-mix(in srgb, var(--kaleido-accent) 38%, transparent) !important; }" +
-    "[data-kaleido-link='true'] { color: var(--kaleido-accent) !important; }" +
-    "[data-kaleido-link='true']:hover { color: color-mix(in srgb, var(--kaleido-accent) 76%, white) !important; }" +
     "[data-kaleido-picked-role='base'] { background-color: var(--kaleido-base) !important; }" +
     "[data-kaleido-picked-role='surface'] { background-color: var(--kaleido-surface) !important; }" +
     "[data-kaleido-picked-role='accent'] { color: var(--kaleido-accent) !important; border-color: var(--kaleido-accent) !important; }" +
-    "[data-kaleido-picked-role='text'] { color: var(--kaleido-text) !important; }" +
-    "[data-kaleido-picked-role='ignore'], [data-kaleido-picked-role='ignore'] * { color: revert !important; background-color: revert !important; border-color: revert !important; }" +
-    (autoEnabled ? "::selection { color: var(--kaleido-base) !important; background: var(--kaleido-accent) !important; }" : "");
+    "[data-kaleido-picked-role='text'] { color: var(--kaleido-text) !important; }";
   if (!oldStyle) (document.head || document.documentElement).appendChild(style);
 
-  function colorInfo(value) {
-    const values = String(value).match(/[\d.]+/g);
-    if (!values || values.length < 3) return null;
-    const alpha = values.length > 3 ? Number(values[3]) : 1;
-    if (alpha < 0.12) return null;
-    const r = Number(values[0]) / 255;
-    const g = Number(values[1]) / 255;
-    const b = Number(values[2]) / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const lightness = (max + min) / 2;
-    const saturation = max === min ? 0 : (max - min) / (1 - Math.abs(2 * lightness - 1));
-    return { lightness, saturation };
-  }
-
-  const isNeutral = info => info && info.saturation < 0.2;
-  const ignoredByRule = element => element.closest('[data-kaleido-picked-role="ignore"]');
-
-  function processElement(element) {
-    if (!(element instanceof HTMLElement)) return;
-    if (element.hasAttribute("data-kaleido-picker-ui")) return;
-    const tag = element.tagName;
-    if (["HTML", "BODY", "IMG", "VIDEO", "CANVAS", "SVG", "PICTURE", "SOURCE", "IFRAME", "SCRIPT", "STYLE", "LINK"].includes(tag)) return;
-
-    clearAutoMarks(element);
-    const pickedRole = element.getAttribute("data-kaleido-picked-role");
-    if (pickedRole || ignoredByRule(element) || !autoEnabled) return;
-
-    const computed = getComputedStyle(element);
-    const background = colorInfo(computed.backgroundColor);
-    if (isNeutral(background) && background.lightness > 0.78) {
-      element.setAttribute("data-kaleido-bg", "true");
-    }
-
-    const foreground = colorInfo(computed.color);
-    if (isNeutral(foreground) && foreground.lightness < 0.22) {
-      element.setAttribute("data-kaleido-fg", "true");
-    }
-
-    if ((tag === "A" || element.getAttribute("role") === "link") && isNeutral(foreground) && foreground.lightness < 0.55) {
-      element.setAttribute("data-kaleido-link", "true");
-    }
-
-    const borderValues = [computed.borderTopColor, computed.borderRightColor, computed.borderBottomColor, computed.borderLeftColor];
-    if (borderValues.some(value => {
-      const info = colorInfo(value);
-      return isNeutral(info) && info.lightness > 0.42;
-    })) {
-      element.setAttribute("data-kaleido-border", "true");
-    }
-  }
-
-  function scan(root) {
-    if (root instanceof HTMLElement) applyRules(root);
-    if (root instanceof HTMLElement) processElement(root);
+  function refreshRules(root) {
+    if (root instanceof Element) root.removeAttribute("data-kaleido-picked-role");
     if (root && typeof root.querySelectorAll === "function") {
-      applyRules(root);
-      root.querySelectorAll("*").forEach(processElement);
+      root.querySelectorAll("[data-kaleido-picked-role]").forEach(element => element.removeAttribute("data-kaleido-picked-role"));
     }
+    applyRules(root);
   }
 
-  const pending = new Set();
-  let queued = false;
-  function queue(root) {
-    if (!(root instanceof HTMLElement)) return;
-    pending.add(root);
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => {
-      queued = false;
-      const roots = Array.from(pending);
-      pending.clear();
-      roots.forEach(scan);
-    });
-  }
-
-  scan(document.body || document.documentElement);
   const observer = new MutationObserver(records => {
     for (const record of records) {
       if (record.type === "childList") {
-        record.addedNodes.forEach(queue);
-      } else if (record.target instanceof HTMLElement) {
-        queue(record.target);
+        record.addedNodes.forEach(node => {
+          if (node instanceof Element) applyRules(node);
+        });
+      } else if (record.target instanceof Element) {
+        refreshRules(record.target);
       }
     }
   });
@@ -271,7 +188,7 @@ function applyKaleidoTheme(colors, rules, autoEnabled) {
       subtree: true,
       childList: true,
       attributes: true,
-      attributeFilter: ["class", "style"]
+      attributeFilter: ["class", "id"]
     });
   }
   window.__kaleidoObserver = observer;
@@ -281,6 +198,10 @@ async function refreshOpenTabs() {
   const tabs = await chrome.tabs.query({});
   await Promise.all(tabs.map(tab => applyToTab(tab)));
 }
+
+chrome.runtime.onInstalled.addListener(() => {
+  void refreshOpenTabs();
+});
 
 async function applyPreview(message, sendResponse) {
   const tabId = Number(message.tabId);
@@ -293,7 +214,7 @@ async function applyPreview(message, sendResponse) {
     await chrome.scripting.executeScript({
       target: { tabId },
       func: applyKaleidoTheme,
-      args: [colors, cleanRules(message.rules), message.autoEnabled !== false]
+      args: [colors, cleanRules(message.rules)]
     });
     sendResponse({ ok: true });
   } catch {
@@ -330,20 +251,22 @@ async function savePickedRule(message, sender, sendResponse) {
     return;
   }
 
-  const domain = normalizeHost(url.hostname);
+  const host = normalizeHost(url.hostname);
   const { siteRules = {}, themes = {} } = await chrome.storage.local.get(["siteRules", "themes"]);
-  const matchedTheme = findTheme(domain, themes);
-  const ruleDomain = matchedTheme?.domain || domain;
-  const rules = cleanRules(siteRules[ruleDomain]);
+  const matchedTheme = findTheme(host, themes);
+  const domain = matchedTheme?.domain || host;
+  const rules = cleanRules(siteRules[domain]);
   const existing = rules.find(rule => rule.selector === selector);
   const label = typeof message.label === "string" ? message.label.slice(0, 80) : selector.slice(0, 80);
   if (existing) {
     existing.role = role;
     existing.label = label;
-  } else rules.push({ selector, role, label });
-  siteRules[ruleDomain] = rules;
+  } else {
+    rules.push({ selector, role, label });
+  }
+  siteRules[domain] = rules;
   await chrome.storage.local.set({ siteRules });
-  sendResponse({ ok: true, domain: ruleDomain, rules });
+  sendResponse({ ok: true, domain, rules });
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
