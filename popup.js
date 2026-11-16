@@ -1,8 +1,8 @@
 const DEFAULT_COLORS = [
-  { id: "builtin-dark-plum", name: "Dark plum", value: "#282025", builtIn: true },
-  { id: "builtin-plum", name: "Plum", value: "#553D44", builtIn: true },
-  { id: "builtin-rose", name: "Rose", value: "#ECA8BD", builtIn: true },
-  { id: "builtin-periwinkle", name: "Periwinkle", value: "#CDD6F4", builtIn: true }
+  { id: "builtin-dark-plum", value: "#282025", builtIn: true },
+  { id: "builtin-plum", value: "#553D44", builtIn: true },
+  { id: "builtin-rose", value: "#ECA8BD", builtIn: true },
+  { id: "builtin-periwinkle", value: "#CDD6F4", builtIn: true }
 ];
 const DEFAULT_ROLE_VALUES = {
   base: "#282025",
@@ -18,7 +18,6 @@ const statusNode = document.getElementById("status");
 const targetList = document.getElementById("targetList");
 const pickAreaButton = document.getElementById("pickArea");
 const newColorValue = document.getElementById("newColorValue");
-const newColorName = document.getElementById("newColorName");
 const saveColorButton = document.getElementById("saveColor");
 
 let activeHost = "";
@@ -44,13 +43,12 @@ function findColor(id) {
   return colors.find(color => color.id === id) || colors[0] || null;
 }
 
-function addColor(value, name = "Saved color", id = "") {
+function addColor(value, id = "") {
   if (!isHex(value)) return null;
   const hex = value.toUpperCase();
   const safeId = id || `color-${hex.slice(1).toLowerCase()}`;
   const existingId = colors.find(color => color.id === safeId);
   if (existingId) {
-    existingId.name = String(name || existingId.name || "Saved color").slice(0, 32);
     existingId.value = hex;
     return existingId;
   }
@@ -58,7 +56,7 @@ function addColor(value, name = "Saved color", id = "") {
     const found = colors.find(color => color.value.toUpperCase() === hex);
     if (found) return found;
   }
-  const color = { id: safeId, name: String(name || "Saved color").slice(0, 32), value: hex };
+  const color = { id: safeId, value: hex };
   colors.push(color);
   return color;
 }
@@ -108,19 +106,16 @@ function renderColorLibrary() {
     swatch.style.backgroundColor = color.value;
     const copy = document.createElement("span");
     copy.className = "color-copy";
-    const name = document.createElement("span");
-    name.className = "color-name";
-    name.textContent = color.name;
     const hex = document.createElement("span");
     hex.className = "color-hex";
     hex.textContent = color.value.toUpperCase();
-    copy.append(name, hex);
+    copy.append(hex);
     select.append(swatch, copy);
     select.addEventListener("click", async () => {
       activeColorId = color.id;
       await chrome.storage.local.set({ activeColorId });
       renderColorLibrary();
-      showStatus(`Selected ${color.name} for the next area.`);
+      showStatus(`Selected ${color.value.toUpperCase()} for the next area.`);
     });
 
     const tools = document.createElement("div");
@@ -129,8 +124,8 @@ function renderColorLibrary() {
     edit.className = "edit-color";
     edit.type = "color";
     edit.value = color.value;
-    edit.title = `Change ${color.name}`;
-    edit.setAttribute("aria-label", `Change ${color.name}`);
+    edit.title = `Change ${color.value.toUpperCase()}`;
+    edit.setAttribute("aria-label", `Change color ${color.value.toUpperCase()}`);
     edit.addEventListener("input", () => {
       color.value = edit.value.toUpperCase();
       hex.textContent = color.value;
@@ -140,7 +135,7 @@ function renderColorLibrary() {
     edit.addEventListener("change", async () => {
       await chrome.storage.local.set({ colors });
       await refreshTabs();
-      showStatus(`Updated ${color.name}.`);
+      showStatus(`Updated ${color.value.toUpperCase()}.`);
     });
     tools.appendChild(edit);
 
@@ -151,15 +146,15 @@ function renderColorLibrary() {
       remove.textContent = "Delete";
       const used = colorUseCount(color.id) > 0;
       remove.disabled = used;
-      remove.title = used ? "Change or remove areas using this color first" : `Delete ${color.name}`;
-      remove.setAttribute("aria-label", `Delete ${color.name}`);
+      remove.title = used ? "Change or remove areas using this color first" : `Delete ${color.value.toUpperCase()}`;
+      remove.setAttribute("aria-label", `Delete color ${color.value.toUpperCase()}`);
       remove.addEventListener("click", async () => {
         if (colorUseCount(color.id)) return;
         colors = colors.filter(item => item.id !== color.id);
         if (activeColorId === color.id) activeColorId = colors[0]?.id || "";
         await chrome.storage.local.set({ colors, activeColorId });
         renderColorLibrary();
-        showStatus(`Deleted ${color.name}.`);
+        showStatus(`Deleted ${color.value.toUpperCase()}.`);
       });
       tools.appendChild(remove);
     }
@@ -193,7 +188,7 @@ function renderTargets() {
     for (const color of colors) {
       const option = document.createElement("option");
       option.value = color.id;
-      option.textContent = `${color.name} - ${color.value.toUpperCase()}`;
+      option.textContent = color.value.toUpperCase();
       select.appendChild(option);
     }
     select.value = colors.some(color => color.id === rule.colorId) ? rule.colorId : (activeColorId || colors[0]?.id || "");
@@ -232,24 +227,17 @@ async function refreshTabs() {
 }
 
 async function saveColor() {
-  const name = newColorName.value.trim();
-  if (!name) {
-    showStatus("Give this color a name first.", true);
-    newColorName.focus();
-    return;
-  }
   const hex = newColorValue.value.toUpperCase();
   let color = colors.find(item => item.value.toUpperCase() === hex);
   if (color) {
     activeColorId = color.id;
     showStatus(`${hex} is already saved. Selected it.`);
   } else {
-    color = { id: `color-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, name: name.slice(0, 32), value: hex };
+    color = { id: `color-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, value: hex };
     colors.push(color);
     activeColorId = color.id;
-    showStatus(`Saved ${color.name}.`);
+    showStatus(`Saved ${hex}.`);
   }
-  newColorName.value = "";
   await chrome.storage.local.set({ colors, activeColorId });
   renderColorLibrary();
 }
@@ -276,7 +264,7 @@ async function pickArea() {
   }
   try {
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
-    showStatus("Move over the page, click the area, then confirm it.");
+    showStatus("Select one or more areas, confirm them, then choose a color.");
   } catch {
     showStatus("This page does not allow Kaleido's area picker.", true);
   }
@@ -294,7 +282,7 @@ function migrateRules(oldRules, oldThemes) {
       if (!value && roleKeys[rule.role]) value = oldThemes?.[domain]?.colors?.[roleKeys[rule.role]] || "";
       if (!value && roleKeys[rule.role]) value = DEFAULT_ROLE_VALUES[roleKeys[rule.role]] || "";
       if (!isHex(value)) return [];
-      const color = addColor(value, "Saved color");
+      const color = addColor(value);
       return color ? [{ selector: rule.selector, label: rule.label || rule.selector, colorId: color.id }] : [];
     });
   }
@@ -309,17 +297,17 @@ async function initialize() {
 
   if (Array.isArray(result.colors)) {
     for (const saved of result.colors) {
-      if (saved && isHex(saved.value)) addColor(saved.value, saved.name || "Saved color", saved.id || "");
+      if (saved && isHex(saved.value)) addColor(saved.value, saved.id || "");
     }
   }
   for (const profile of Object.values(result.themes || {})) {
     for (const value of Object.values(profile?.colors || {})) {
-      if (isHex(value)) addColor(value, "Saved color");
+      if (isHex(value)) addColor(value);
     }
   }
   for (const palette of result.palettes || []) {
     for (const value of Object.values(palette?.colors || {})) {
-      if (isHex(value)) addColor(value, "Saved color");
+      if (isHex(value)) addColor(value);
     }
   }
 
