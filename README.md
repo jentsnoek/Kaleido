@@ -14,7 +14,7 @@ The first time you pick an area, the browser asks for website access. Kaleido us
 
 ## Pick and color an area
 
-Move over the page to see the highlighted area. Click each area you want to change, confirm the highlighted selection, then choose a saved color square for that group. Kaleido applies and saves the color for the current website. In the popup, use the group's color squares to recolor every area together, add more areas to the group, or remove individual areas. Add, edit, and remove saved colors in the **Colors** section.
+Move over the page to see the highlighted area. Click each area you want to change, confirm the highlighted selection, then choose a saved color square for that group. Kaleido applies and saves the color for the current website. Groups start collapsed in the popup. Expand one to review or remove areas, use its color square to recolor everything together, add more areas with **+**, or delete the group. Add, edit, and remove saved colors in the **Colors** section.
 
 Your color library and picked areas are stored in the browser's local extension storage. Kaleido does not send page data or settings to a server. See [`privacy.html`](./privacy.html).
 
