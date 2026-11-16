@@ -35,7 +35,7 @@
       <input id="siteName" class="text-input" type="text" maxlength="40" placeholder="For example, OP.GG">
       <label class="field-label" for="domain">Website</label>
       <input id="domain" class="text-input" type="text" spellcheck="false" placeholder="op.gg">
-      <p class="hint">Open a site to add it, or enter a domain above.</p>
+      <p class="hint">Save a theme per site. Kaleido asks once for access to all websites.</p>
     </section>
 
     <section class="palette-section">
@@ -50,6 +50,26 @@
       </div>
       <button id="saveTheme" class="primary-button" type="button">Save theme for this site</button>
       <p id="status" class="status" aria-live="polite"></p>
+    </section>
+
+    <section class="combo-section">
+      <div class="section-heading">
+        <h2>Saved color combos</h2>
+        <span id="paletteCount" class="count-pill">1</span>
+      </div>
+      <div id="paletteList" class="palette-list"></div>
+      <div class="palette-save-row">
+        <input id="paletteName" class="text-input" type="text" maxlength="32" placeholder="Name this combo">
+        <button id="savePalette" class="small-button" type="button">Save combo</button>
+      </div>
+    </section>
+
+    <section class="target-section">
+      <div class="section-heading"><h2>Color targeting</h2></div>
+      <label class="auto-row"><input id="autoColor" type="checkbox" checked><span>Automatic color matching</span></label>
+      <p class="hint">Turn this off if Kaleido guesses wrong. Pick exact page areas below.</p>
+      <button id="pickArea" class="secondary-button" type="button">Pick an area on this page</button>
+      <div id="targetList" class="target-list"></div>
     </section>
 
     <section class="saved-section">
@@ -69,3 +89,4 @@
   <script src="popup.js"></script>
 </body>
 </html>
+
