@@ -68,19 +68,28 @@ h2 { color: #F4D9E3; font-size: 12px; letter-spacing: .35px; text-transform: upp
 .target-list { display: grid; gap: 8px; margin-top: 8px; }
 .target-empty { padding: 3px 1px 0; color: var(--muted); font-size: 10px; }
 .group-card { min-width: 0; padding: 9px; border: 1px solid rgba(205,214,244,.13); border-radius: 10px; background: rgba(85,61,68,.25); }
-.group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.group-summary { min-width: 0; display: grid; gap: 2px; }
 .group-title { color: #F4D9E3; font-size: 11px; font-weight: 650; }
 .group-count { color: var(--muted); font-size: 9px; }
-.group-palette { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0 8px; }
+.group-controls { display: flex; flex: none; align-items: center; gap: 4px; }
+.group-icon-button { width: 23px; height: 23px; border: 1px solid rgba(236,168,189,.25); border-radius: 6px; padding: 0; color: var(--text); background: rgba(40,32,37,.65); font: 600 14px/1 "Segoe UI",system-ui,sans-serif; cursor: pointer; }
+.group-icon-button:hover { border-color: var(--accent); color: var(--accent); }
+.add-area-button { color: var(--accent); }
+.group-current-color { width: 23px; height: 23px; border: 1px solid #ffffff66; border-radius: 6px; padding: 0; cursor: pointer; }
+.group-current-color:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+.group-delete { border: 0; border-radius: 5px; padding: 4px 5px; color: #E5A6B6; background: transparent; font: 600 9px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
+.group-delete:hover { background: rgba(229,166,182,.12); }
+.group-palette { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 8px 0 2px; }
+.group-palette[hidden], .group-areas[hidden] { display: none; }
 .group-color { width: 23px; height: 23px; border: 1px solid #ffffff55; border-radius: 6px; padding: 0; cursor: pointer; }
 .group-color.selected { outline: 2px solid var(--accent); outline-offset: 2px; }
 .group-areas { display: grid; gap: 5px; }
+.group-areas:not([hidden]) { margin-top: 8px; }
 .group-area { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 6px; padding: 6px 7px; border: 1px solid rgba(205,214,244,.1); border-radius: 7px; background: rgba(40,32,37,.42); }
 .group-area-name { min-width: 0; overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .group-area button { border: 0; border-radius: 5px; padding: 4px 6px; color: #E5A6B6; background: transparent; font: 600 9px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
 .group-area button:hover { background: rgba(229,166,182,.12); }
-.group-add { width: 100%; margin-top: 7px; border: 1px solid rgba(236,168,189,.22); border-radius: 7px; padding: 6px; color: var(--text); background: rgba(40,32,37,.55); font: 600 10px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
-.group-add:hover { border-color: var(--accent); color: var(--accent); }
 footer { display: flex; align-items: center; justify-content: space-between; padding: 2px 2px 1px; color: var(--muted); font-size: 9px; }
 footer a { color: var(--accent); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
