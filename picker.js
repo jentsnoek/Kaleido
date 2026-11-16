@@ -2,6 +2,15 @@
   if (window.__kaleidoPickerActive) return;
   window.__kaleidoPickerActive = true;
 
+  const options = window.__kaleidoPickerOptions || {};
+  let targetGroupId = typeof options.groupId === "string" ? options.groupId : "";
+  let targetGroup = null;
+  let hoveredElement = null;
+  let selectedElements = [];
+  let savedColors = [];
+  let activeColorId = "";
+  let stage = "picking";
+
   const host = document.createElement("div");
   host.dataset.kaleidoPickerUi = "true";
   host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;";
@@ -17,17 +26,18 @@
     #title { margin:0 0 7px; color:#f4eff3; font-size:13px; font-weight:700; overflow-wrap:anywhere; }
     #hint { margin:0 0 12px; color:#b8a7b7; font-size:11px; }
     #actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
-    #colors { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:8px; }
-    button { min-width:0; display:flex; align-items:center; gap:8px; border:1px solid #624955; border-radius:8px; padding:8px; color:#f4eff3; background:#30262d; text-align:left; font:600 11px Segoe UI,system-ui,sans-serif; cursor:pointer; }
+    #colors { display:grid; grid-template-columns:repeat(auto-fill,minmax(42px,1fr)); gap:8px; margin-bottom:8px; }
+    button { min-width:0; display:flex; align-items:center; justify-content:center; gap:8px; border:1px solid #624955; border-radius:8px; padding:8px; color:#f4eff3; background:#30262d; text-align:left; font:600 11px Segoe UI,system-ui,sans-serif; cursor:pointer; }
     button:hover, button:focus-visible { border-color:#eca8bd; color:#eca8bd; outline:none; }
     button.primary { justify-content:center; border-color:#eca8bd; color:#282025; background:#eca8bd; }
     button.quiet { justify-content:center; color:#c9b9c5; background:transparent; }
     button:disabled { opacity:.4; cursor:default; }
-    .swatch { width:24px; height:24px; flex:none; border:1px solid #ffffff55; border-radius:6px; }
-    .color-value { color:#f4eff3; font:10px Consolas,monospace; }
-    .active { border-color:#eca8bd; background:#5a3b4a; }
+    .swatch { width:28px; height:28px; flex:none; border:1px solid #ffffff66; border-radius:7px; box-shadow:inset 0 0 0 1px #0002; }
+    #colors button { min-height:44px; padding:6px; }
+    #colors button.active { border-color:#eca8bd; background:#5a3b4a; box-shadow:0 0 0 1px #eca8bd55; }
     #footer { margin-top:9px; color:#b8a7b7; font-size:10px; }
   `;
+
   const selections = document.createElement("div");
   selections.id = "selections";
   selections.setAttribute("aria-hidden", "true");
@@ -50,12 +60,6 @@
   panel.append(brand, title, hint, content, footer);
   shadow.append(style, selections, highlight, panel);
   document.documentElement.appendChild(host);
-
-  let hoveredElement = null;
-  let selectedElements = [];
-  let savedColors = [];
-  let activeColorId = "";
-  let stage = "picking";
 
   function isPickerUi(event) {
     return event.composedPath().includes(host);
@@ -83,8 +87,8 @@
   }
 
   function renderSelectedHighlights() {
-    selections.replaceChildren();
     selectedElements = selectedElements.filter(element => element.isConnected);
+    selections.replaceChildren();
     selectedElements.forEach(element => {
       const box = document.createElement("div");
       box.className = "picked";
@@ -94,12 +98,11 @@
   }
 
   function describe(element) {
-    if (!element) return "area";
-    const tag = element.localName || "area";
-    const accessibleName = element.getAttribute("aria-label") || element.getAttribute("title");
+    const tag = element?.localName || "area";
+    const accessibleName = element?.getAttribute("aria-label") || element?.getAttribute("title");
     if (accessibleName) return `${tag}: ${accessibleName}`.slice(0, 64);
-    if (element.id) return `${tag}#${element.id}`.slice(0, 64);
-    const firstClass = Array.from(element.classList || []).find(name => name.length < 32 && !/[0-9a-f]{8,}/i.test(name));
+    if (element?.id) return `${tag}#${element.id}`.slice(0, 64);
+    const firstClass = Array.from(element?.classList || []).find(name => name.length < 32 && !/[0-9a-f]{8,}/i.test(name));
     return (firstClass ? `${tag}.${firstClass}` : tag).slice(0, 64);
   }
 
@@ -121,7 +124,6 @@
           }
         } catch { /* Continue with a positional selector. */ }
       }
-
       let part = current.localName;
       if (useClasses && current.classList?.length) {
         const stableClasses = Array.from(current.classList)
@@ -170,8 +172,10 @@
     if (clear) selectedElements = [];
     renderSelectedHighlights();
     title.style.color = "#f4eff3";
-    title.textContent = "Pick areas";
-    hint.textContent = "Hover to highlight an area, then click each area you want to change. Click a selected area again to remove it.";
+    title.textContent = targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group";
+    hint.textContent = targetGroup
+      ? "Click each page area to add it to this group. Click a selected area again to remove it."
+      : "Click each highlighted area to group it. Click a selected area again to remove it.";
     content.replaceChildren();
     const actions = document.createElement("div");
     actions.id = "actions";
@@ -179,9 +183,11 @@
     confirm.disabled = selectedElements.length === 0;
     const clearButton = makeButton("Clear", "", () => showPicking(true));
     clearButton.disabled = selectedElements.length === 0;
-    actions.append(confirm, clearButton, makeButton("Cancel", "quiet", cleanup));
+    actions.append(confirm, clearButton, makeButton("Cancel picking", "quiet", cleanup));
     content.appendChild(actions);
-    footer.textContent = selectedElements.length ? `${selectedElements.length} selected � purple outlines mark your choices.` : "Press Esc to cancel.";
+    footer.textContent = selectedElements.length
+      ? `${selectedElements.length} selected - purple outlines mark your choices.`
+      : "Press Esc or Cancel picking to close without saving.";
     if (hoveredElement?.isConnected) placeBox(highlight, hoveredElement);
     else highlight.style.display = "none";
   }
@@ -196,27 +202,54 @@
     stage = "colors";
     highlight.style.display = "none";
     renderSelectedHighlights();
-    title.textContent = `Confirm ${selectedElements.length} selected area${selectedElements.length === 1 ? "" : "s"}`;
-    hint.textContent = "The purple outlines show what will change. Choose one saved color for this group.";
     content.replaceChildren();
+
+    if (targetGroup) {
+      const groupColor = savedColors.find(color => color.id === targetGroup.colorId);
+      if (!groupColor) {
+        title.textContent = "This group's color is no longer saved.";
+        hint.textContent = "Close the picker and choose another color for the group first.";
+        content.appendChild(makeButton("Close picker", "quiet", cleanup));
+        return;
+      }
+      title.textContent = `Add ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`;
+      hint.textContent = "The purple outlines show what will be added. This group's current color will be applied.";
+      const add = makeButton(`Add to ${targetGroup.name}`, "primary", () => saveAreas(groupColor));
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.backgroundColor = groupColor.value;
+      add.prepend(swatch);
+      content.append(
+        add,
+        makeButton("Back to areas", "quiet", () => showPicking()),
+        makeButton("Cancel picking", "quiet", cleanup)
+      );
+      footer.textContent = "New areas will use the same color as the rest of this group.";
+      return;
+    }
+
+    title.textContent = `Confirm ${selectedElements.length} selected area${selectedElements.length === 1 ? "" : "s"}`;
+    hint.textContent = "The purple outlines show what will change. Choose a color square for the group.";
     const grid = document.createElement("div");
     grid.id = "colors";
-    for (const color of savedColors) {
+    savedColors.forEach((color, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = color.id === activeColorId ? "active" : "";
-      button.title = `Apply ${color.value} to the selected areas`;
+      button.title = "Apply this color to the selected areas";
+      button.setAttribute("aria-label", `Saved color ${index + 1}`);
       const swatch = document.createElement("span");
       swatch.className = "swatch";
       swatch.style.backgroundColor = color.value;
-      const value = document.createElement("span");
-      value.className = "color-value";
-      value.textContent = color.value.toUpperCase();
-      button.append(swatch, value);
+      button.appendChild(swatch);
       button.addEventListener("click", () => saveAreas(color));
       grid.appendChild(button);
-    }
-    content.append(grid, makeButton("Back to areas", "quiet", () => showPicking()));
+    });
+    content.append(
+      grid,
+      makeButton("Back to areas", "quiet", () => showPicking()),
+      makeButton("Cancel picking", "quiet", cleanup)
+    );
     footer.textContent = "This applies the chosen color to every selected area.";
   }
 
@@ -232,28 +265,39 @@
     }
     stage = "saving";
     title.textContent = "Saving selected areas.";
-    hint.textContent = `Applying ${color.value.toUpperCase()}.`;
+    hint.textContent = "Applying the chosen group color.";
     content.replaceChildren();
-    chrome.runtime.sendMessage({ type: "kaleido-targets-picked", targets, colorId: color.id }, response => {
+    const message = { type: "kaleido-targets-picked", targets, colorId: color.id };
+    if (targetGroupId) message.groupId = targetGroupId;
+    chrome.runtime.sendMessage(message, response => {
       const failed = chrome.runtime.lastError || !response?.ok;
       if (failed) {
         title.style.color = "#ff9ca8";
         title.textContent = "Kaleido couldn't save these areas.";
         hint.textContent = "Check the site's access, then try again.";
-        content.append(makeButton("Back to colors", "primary", showColors));
+        content.append(
+          makeButton("Back to colors", "primary", showColors),
+          makeButton("Cancel picking", "quiet", cleanup)
+        );
         return;
       }
       const count = targets.length;
+      targetGroupId = response.groupId || targetGroupId;
+      targetGroup = {
+        id: targetGroupId,
+        name: response.groupName || targetGroup?.name || "this group",
+        colorId: response.colorId || color.id
+      };
       selectedElements = [];
       renderSelectedHighlights();
       title.style.color = "#eca8bd";
-      title.textContent = `${count} area${count === 1 ? "" : "s"} saved and colored.`;
-      hint.textContent = `Applied ${color.value.toUpperCase()} to the selected areas.`;
+      title.textContent = `${count} area${count === 1 ? "" : "s"} added to ${targetGroup.name}.`;
+      hint.textContent = "The group color has been applied to these areas.";
       content.append(
-        makeButton("Pick more areas", "primary", () => showPicking(true)),
+        makeButton("Add more areas", "primary", () => showPicking(true)),
         makeButton("Done", "quiet", cleanup)
       );
-      footer.textContent = "Change any area's color later in the Kaleido menu.";
+      footer.textContent = "Change the group's color or its areas in the Kaleido menu.";
     });
   }
 
@@ -314,15 +358,22 @@
     if (chrome.runtime.lastError) {
       title.textContent = "Kaleido couldn't load your saved colors.";
       hint.textContent = "Close the picker and reopen the extension.";
-      content.appendChild(makeButton("Close picker", "quiet", cleanup));
+      content.appendChild(makeButton("Cancel picking", "quiet", cleanup));
       return;
     }
     savedColors = Array.isArray(response?.colors) ? response.colors : [];
     activeColorId = response?.activeColorId || "";
+    targetGroup = targetGroupId ? (response?.groups || []).find(group => group.id === targetGroupId) || null : null;
+    if (targetGroupId && !targetGroup) {
+      title.textContent = "That group could not be found.";
+      hint.textContent = "Close the picker and reopen the group in Kaleido.";
+      content.appendChild(makeButton("Cancel picking", "quiet", cleanup));
+      return;
+    }
     if (!savedColors.length) {
       title.textContent = "No saved colors yet";
-      hint.textContent = "Close this picker and save a color in the Kaleido menu first.";
-      content.appendChild(makeButton("Close picker", "quiet", cleanup));
+      hint.textContent = "Close the picker and save a color in the Kaleido menu first.";
+      content.appendChild(makeButton("Cancel picking", "quiet", cleanup));
       return;
     }
     showPicking();
