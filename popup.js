@@ -100,22 +100,17 @@ function renderColorLibrary() {
     select.type = "button";
     select.className = "color-select";
     select.setAttribute("aria-pressed", String(color.id === activeColorId));
-    select.title = "Select this color for the next area you pick";
+    select.title = "Select this color for new areas";
+    select.setAttribute("aria-label", `Select saved color ${colors.indexOf(color) + 1}`);
     const swatch = document.createElement("span");
     swatch.className = "color-swatch";
     swatch.style.backgroundColor = color.value;
-    const copy = document.createElement("span");
-    copy.className = "color-copy";
-    const hex = document.createElement("span");
-    hex.className = "color-hex";
-    hex.textContent = color.value.toUpperCase();
-    copy.append(hex);
-    select.append(swatch, copy);
+    select.append(swatch);
     select.addEventListener("click", async () => {
       activeColorId = color.id;
       await chrome.storage.local.set({ activeColorId });
       renderColorLibrary();
-      showStatus(`Selected ${color.value.toUpperCase()} for the next area.`);
+      showStatus("Color selected for new areas.");
     });
 
     const tools = document.createElement("div");
@@ -124,18 +119,18 @@ function renderColorLibrary() {
     edit.className = "edit-color";
     edit.type = "color";
     edit.value = color.value;
-    edit.title = `Change ${color.value.toUpperCase()}`;
-    edit.setAttribute("aria-label", `Change color ${color.value.toUpperCase()}`);
+    edit.title = "Edit color";
+    edit.setAttribute("aria-label", `Edit saved color ${colors.indexOf(color) + 1}`);
     edit.addEventListener("input", () => {
       color.value = edit.value.toUpperCase();
-      hex.textContent = color.value;
       swatch.style.backgroundColor = color.value;
       schedulePreview();
     });
     edit.addEventListener("change", async () => {
       await chrome.storage.local.set({ colors });
       await refreshTabs();
-      showStatus(`Updated ${color.value.toUpperCase()}.`);
+      renderTargets();
+      showStatus("Color updated.");
     });
     tools.appendChild(edit);
 
@@ -146,15 +141,15 @@ function renderColorLibrary() {
       remove.textContent = "Delete";
       const used = colorUseCount(color.id) > 0;
       remove.disabled = used;
-      remove.title = used ? "Change or remove areas using this color first" : `Delete ${color.value.toUpperCase()}`;
-      remove.setAttribute("aria-label", `Delete color ${color.value.toUpperCase()}`);
+      remove.title = used ? "Change or remove areas using this color first" : "Delete color";
+      remove.setAttribute("aria-label", `Delete saved color ${colors.indexOf(color) + 1}`);
       remove.addEventListener("click", async () => {
         if (colorUseCount(color.id)) return;
         colors = colors.filter(item => item.id !== color.id);
         if (activeColorId === color.id) activeColorId = colors[0]?.id || "";
         await chrome.storage.local.set({ colors, activeColorId });
         renderColorLibrary();
-        showStatus(`Deleted ${color.value.toUpperCase()}.`);
+        showStatus("Color deleted.");
       });
       tools.appendChild(remove);
     }
@@ -172,54 +167,89 @@ function renderTargets() {
   }
   const rules = siteRules[activeHost] || [];
   if (!rules.length) {
-    targetList.innerHTML = '<p class="target-empty">No areas picked on this site yet.</p>';
+    targetList.innerHTML = '<p class="target-empty">No groups on this site yet.</p>';
     return;
   }
 
+  const groups = [];
+  const byId = new Map();
   for (const rule of rules) {
-    const card = document.createElement("div");
-    card.className = "target-card";
-    const label = document.createElement("div");
-    label.className = "target-name";
-    label.textContent = rule.label || rule.selector;
-
-    const select = document.createElement("select");
-    select.setAttribute("aria-label", `Color for ${rule.label || "picked area"}`);
-    for (const color of colors) {
-      const option = document.createElement("option");
-      option.value = color.id;
-      option.textContent = color.value.toUpperCase();
-      select.appendChild(option);
+    const groupId = rule.groupId || `legacy-${rule.selector}`;
+    let group = byId.get(groupId);
+    if (!group) {
+      group = { id: groupId, colorId: rule.colorId, rules: [] };
+      byId.set(groupId, group);
+      groups.push(group);
     }
-    select.value = colors.some(color => color.id === rule.colorId) ? rule.colorId : (activeColorId || colors[0]?.id || "");
-    select.addEventListener("change", async () => {
-      siteRules[activeHost] = (siteRules[activeHost] || []).map(item =>
-        item.selector === rule.selector ? { ...item, colorId: select.value } : item
-      );
-      await chrome.storage.local.set({ siteRules });
-      await refreshTabs();
-      schedulePreview();
-      renderColorLibrary();
-      showStatus("Updated this area's color.");
+    group.rules.push(rule);
+  }
+
+  groups.forEach((group, groupIndex) => {
+    const card = document.createElement("section");
+    card.className = "group-card";
+    const heading = document.createElement("div");
+    heading.className = "group-heading";
+    const title = document.createElement("strong");
+    title.className = "group-title";
+    title.textContent = `Group ${groupIndex + 1}`;
+    const count = document.createElement("span");
+    count.className = "group-count";
+    count.textContent = `${group.rules.length} area${group.rules.length === 1 ? "" : "s"}`;
+    heading.append(title, count);
+
+    const palette = document.createElement("div");
+    palette.className = "group-palette";
+    colors.forEach((color, colorIndex) => {
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "group-color" + (color.id === group.colorId ? " selected" : "");
+      swatch.style.backgroundColor = color.value;
+      swatch.title = "Change the color of this whole group";
+      swatch.setAttribute("aria-label", `Set Group ${groupIndex + 1} to saved color ${colorIndex + 1}`);
+      swatch.setAttribute("aria-pressed", String(color.id === group.colorId));
+      swatch.addEventListener("click", async () => {
+        siteRules[activeHost] = (siteRules[activeHost] || []).map(rule =>
+          rule.groupId === group.id ? { ...rule, colorId: color.id } : rule
+        );
+        await chrome.storage.local.set({ siteRules });
+        await refreshTabs();
+        renderTargets();
+        showStatus("Group color updated.");
+      });
+      palette.appendChild(swatch);
     });
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "Delete";
-    remove.title = "Remove this picked area";
-    remove.setAttribute("aria-label", `Delete ${rule.label || "picked area"}`);
-    remove.addEventListener("click", async () => {
-      siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
-      await chrome.storage.local.set({ siteRules });
-      await refreshTabs();
-      schedulePreview();
-      renderTargets();
-      renderColorLibrary();
-      showStatus("Removed this area.");
+    const areaList = document.createElement("div");
+    areaList.className = "group-areas";
+    group.rules.forEach(rule => {
+      const row = document.createElement("div");
+      row.className = "group-area";
+      const label = document.createElement("span");
+      label.className = "group-area-name";
+      label.textContent = rule.label || rule.selector;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove ${rule.label || "area"} from Group ${groupIndex + 1}`);
+      remove.addEventListener("click", async () => {
+        siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
+        await chrome.storage.local.set({ siteRules });
+        await refreshTabs();
+        renderTargets();
+        showStatus("Area removed from its group.");
+      });
+      row.append(label, remove);
+      areaList.appendChild(row);
     });
-    card.append(label, select, remove);
+
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "group-add";
+    add.textContent = "Add area to group";
+    add.addEventListener("click", () => pickArea(group.id));
+    card.append(heading, palette, areaList, add);
     targetList.appendChild(card);
-  }
+  });
 }
 
 async function refreshTabs() {
@@ -231,18 +261,18 @@ async function saveColor() {
   let color = colors.find(item => item.value.toUpperCase() === hex);
   if (color) {
     activeColorId = color.id;
-    showStatus(`${hex} is already saved. Selected it.`);
+    showStatus("That color is already saved. Selected it.");
   } else {
     color = { id: `color-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`, value: hex };
     colors.push(color);
     activeColorId = color.id;
-    showStatus(`Saved ${hex}.`);
+    showStatus("Color saved.");
   }
   await chrome.storage.local.set({ colors, activeColorId });
   renderColorLibrary();
 }
 
-async function pickArea() {
+async function pickArea(groupId = "") {
   if (!activeTabId || !activeHost) {
     showStatus("Open the webpage you want to color first.", true);
     return;
@@ -263,8 +293,13 @@ async function pickArea() {
     }
   }
   try {
+    await chrome.scripting.executeScript({
+      target: { tabId: activeTabId },
+      func: id => { window.__kaleidoPickerOptions = { groupId: id }; },
+      args: [groupId]
+    });
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
-    showStatus("Select one or more areas, confirm them, then choose a color.");
+    showStatus(groupId ? "Select areas to add to this group." : "Select areas for a new color group.");
   } catch {
     showStatus("This page does not allow Kaleido's area picker.", true);
   }
@@ -275,15 +310,29 @@ function migrateRules(oldRules, oldThemes) {
   const roleKeys = { base: "base", surface: "surface", accent: "accent", text: "text" };
   for (const [domain, rules] of Object.entries(oldRules || {})) {
     if (!Array.isArray(rules)) continue;
+    const legacyGroups = new Map();
     migrated[domain] = rules.flatMap(rule => {
       if (!rule || typeof rule.selector !== "string") return [];
-      if (rule.colorId && colors.some(color => color.id === rule.colorId)) return [{ ...rule }];
-      let value = isHex(rule.value) ? rule.value : "";
-      if (!value && roleKeys[rule.role]) value = oldThemes?.[domain]?.colors?.[roleKeys[rule.role]] || "";
-      if (!value && roleKeys[rule.role]) value = DEFAULT_ROLE_VALUES[roleKeys[rule.role]] || "";
-      if (!isHex(value)) return [];
-      const color = addColor(value);
-      return color ? [{ selector: rule.selector, label: rule.label || rule.selector, colorId: color.id }] : [];
+      let color = colors.find(item => item.id === rule.colorId);
+      if (!color) {
+        let value = isHex(rule.value) ? rule.value : "";
+        if (!value && roleKeys[rule.role]) value = oldThemes?.[domain]?.colors?.[roleKeys[rule.role]] || "";
+        if (!value && roleKeys[rule.role]) value = DEFAULT_ROLE_VALUES[roleKeys[rule.role]] || "";
+        if (!isHex(value)) return [];
+        color = addColor(value);
+      }
+      if (!color) return [];
+      let groupId = typeof rule.groupId === "string" ? rule.groupId : "";
+      if (!groupId) {
+        if (!legacyGroups.has(color.id)) legacyGroups.set(color.id, `group-import-${Date.now()}-${legacyGroups.size}`);
+        groupId = legacyGroups.get(color.id);
+      }
+      return [{
+        selector: rule.selector,
+        label: rule.label || rule.selector,
+        colorId: color.id,
+        groupId
+      }];
     });
   }
   return migrated;
@@ -291,7 +340,7 @@ function migrateRules(oldRules, oldThemes) {
 
 async function initialize() {
   saveColorButton.addEventListener("click", saveColor);
-  pickAreaButton.addEventListener("click", pickArea);
+  pickAreaButton.addEventListener("click", () => pickArea());
   const result = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "themes", "palettes"]);
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
 
