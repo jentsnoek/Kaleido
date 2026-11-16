@@ -65,20 +65,18 @@
     </section>
 
     <section class="target-section">
-      <div class="section-heading"><h2>Color targeting</h2></div>
-      <label class="auto-row"><input id="autoColor" type="checkbox" checked><span>Automatic color matching</span></label>
-      <p class="hint">Turn this off if Kaleido guesses wrong. Pick exact page areas below.</p>
+      <div class="section-heading"><h2>Picked areas</h2></div>
+      <p class="hint">Kaleido only changes areas you pick. Save this site's theme first, then pick an area and choose its color.</p>
       <button id="pickArea" class="secondary-button" type="button">Pick an area on this page</button>
       <div id="targetList" class="target-list"></div>
     </section>
 
     <section class="saved-section">
-      <div class="section-heading">
-        <h2>Your sites</h2>
-        <span id="siteCount" class="count-pill">0</span>
-      </div>
-      <div id="savedList" class="saved-list"></div>
-      <p id="emptyState" class="empty-state">Your saved themes will appear here.</p>
+      <details id="sitesDetails">
+        <summary class="sites-summary"><span>Your sites</span><span id="siteCount" class="count-pill">0</span></summary>
+        <div id="savedList" class="saved-list"></div>
+        <p id="emptyState" class="empty-state">Your saved themes will appear here.</p>
+      </details>
     </section>
 
     <footer>
