@@ -529,7 +529,7 @@ async function startEyedropper() {
   }
 }
 
-async async function ensureSiteAccess(action = "pick areas") {
+async function ensureSiteAccess(action = "pick areas") {
   if (!activeTabId || !activeHost) {
     showStatus("Open a website first.", true);
     return false;
