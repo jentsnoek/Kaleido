@@ -39,6 +39,8 @@ const statusNode = document.getElementById("status");
 const targetList = document.getElementById("targetList");
 const pickAreaButton = document.getElementById("pickArea");
 const selectMatchingColorButton = document.getElementById("selectMatchingColor");
+const pickTextButton = document.getElementById("pickText");
+const applyPageTextButton = document.getElementById("applyPageText");
 const newColorValue = document.getElementById("newColorValue");
 const saveColorButton = document.getElementById("saveColor");
 const sampleColorButton = document.getElementById("sampleColor");
@@ -272,14 +274,20 @@ function renderTargets() {
     const groupId = rule.groupId || `legacy-${rule.selector}`;
     let group = byId.get(groupId);
     if (!group) {
-      group = { id: groupId, colorId: rule.colorId, rules: [] };
+      group = { id: groupId, colorId: rule.colorId, kind: rule.kind === "text" ? "text" : "background", rules: [] };
       byId.set(groupId, group);
       groups.push(group);
     }
     group.rules.push(rule);
   }
 
-  groups.forEach((group, groupIndex) => {
+  let textGroupNumber = 0;
+  let areaGroupNumber = 0;
+  groups.forEach(group => {
+    const groupNumber = group.kind === "text" ? ++textGroupNumber : ++areaGroupNumber;
+    const groupTitle = group.id === "page-text-" + activeHost
+      ? "Page text"
+      : group.kind === "text" ? `Text group ${groupNumber}` : `Group ${groupNumber}`;
     const collapseKey = `${activeHost}:${group.id}`;
     const isCollapsed = collapsedGroups[collapseKey] ?? true;
     const paletteIsOpen = openGroupPaletteId === group.id;
@@ -289,10 +297,11 @@ function renderTargets() {
     heading.className = "group-heading";
     const title = document.createElement("strong");
     title.className = "group-title";
-    title.textContent = `Group ${groupIndex + 1}`;
+    title.textContent = groupTitle;
     const count = document.createElement("span");
     count.className = "group-count";
-    count.textContent = `${group.rules.length} area${group.rules.length === 1 ? "" : "s"}`;
+    const targetLabel = group.kind === "text" ? "text area" : "area";
+    count.textContent = `${group.rules.length} ${targetLabel}${group.rules.length === 1 ? "" : "s"}`;
     const summary = document.createElement("div");
     summary.className = "group-summary";
     summary.append(title, count);
@@ -303,16 +312,16 @@ function renderTargets() {
     add.type = "button";
     add.className = "group-icon-button add-area-button";
     add.textContent = "+";
-    add.title = "Add area to this group";
-    add.setAttribute("aria-label", `Add area to Group ${groupIndex + 1}`);
-    add.addEventListener("click", () => pickArea(group.id));
+    add.title = group.kind === "text" ? "Add text to this group" : "Add area to this group";
+    add.setAttribute("aria-label", `Add ${group.kind === "text" ? "text" : "area"} to ${groupTitle}`);
+    add.addEventListener("click", () => pickArea(group.id, false, group.kind === "text"));
 
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "group-icon-button collapse-button";
     toggle.textContent = isCollapsed ? "▸" : "▾";
     toggle.title = isCollapsed ? "Expand this group" : "Minimize this group";
-    toggle.setAttribute("aria-label", isCollapsed ? `Expand Group ${groupIndex + 1}` : `Minimize Group ${groupIndex + 1}`);
+    toggle.setAttribute("aria-label", isCollapsed ? `Expand ${groupTitle}` : `Minimize ${groupTitle}`);
     toggle.setAttribute("aria-expanded", String(!isCollapsed));
     toggle.addEventListener("click", async () => {
       if (!isCollapsed && focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
@@ -329,7 +338,7 @@ function renderTargets() {
     colorToggle.className = "group-current-color";
     colorToggle.style.backgroundColor = currentColor?.value || "transparent";
     colorToggle.title = "Choose this group's color";
-    colorToggle.setAttribute("aria-label", `Choose color for Group ${groupIndex + 1}`);
+    colorToggle.setAttribute("aria-label", `Choose color for ${groupTitle}`);
     colorToggle.setAttribute("aria-expanded", String(paletteIsOpen));
     colorToggle.addEventListener("click", async () => {
       if (paletteIsOpen) await restoreGroupColorPreview();
@@ -342,7 +351,7 @@ function renderTargets() {
     deleteGroup.className = "group-delete";
     deleteGroup.textContent = "Delete";
     deleteGroup.title = "Delete this entire group and all its areas";
-    deleteGroup.setAttribute("aria-label", `Delete Group ${groupIndex + 1}`);
+    deleteGroup.setAttribute("aria-label", `Delete ${groupTitle}`);
     deleteGroup.addEventListener("click", async () => {
       await restoreGroupColorPreview();
       if (focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
@@ -367,7 +376,7 @@ function renderTargets() {
       swatch.className = "group-color" + (color.id === group.colorId ? " selected" : "");
       swatch.style.backgroundColor = color.value;
       swatch.title = "Change the color of this whole group";
-      swatch.setAttribute("aria-label", `Set Group ${groupIndex + 1} to saved color ${colorIndex + 1}`);
+      swatch.setAttribute("aria-label", `Set ${groupTitle} to saved color ${colorIndex + 1}`);
       swatch.setAttribute("aria-pressed", String(color.id === group.colorId));
       swatch.title = "Hover to preview; click to apply this color to the group";
       swatch.addEventListener("mouseenter", () => previewGroupColor(group.id, color.id));
@@ -463,10 +472,14 @@ function renderTargets() {
       remove.className = "group-area-remove";
       remove.textContent = "×";
       remove.title = "Remove area from this group";
-      remove.setAttribute("aria-label", "Remove " + (rule.label || "area") + " from Group " + (groupIndex + 1));
+      remove.setAttribute("aria-label", "Remove " + (rule.label || (group.kind === "text" ? "text" : "area")) + " from " + groupTitle);
       remove.addEventListener("click", async () => {
         if (focusedAreaKey === previewKey) await clearFocusedArea();
-        siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
+        const ruleKind = rule.kind === "text" ? "text" : "background";
+        siteRules[activeHost] = (siteRules[activeHost] || []).filter(item =>
+          item.selector !== rule.selector ||
+          (item.kind === "text" ? "text" : "background") !== ruleKind
+        );
         if (!siteRules[activeHost].some(item => item.groupId === group.id)) delete collapsedGroups[collapseKey];
         await saveUndoableSettings({ siteRules, collapsedGroups });
         await refreshTabs();
@@ -516,7 +529,24 @@ async function startEyedropper() {
   }
 }
 
-async function pickArea(groupId = "", selectByColor = false) {
+async async function ensureSiteAccess(action = "pick areas") {
+  if (!activeTabId || !activeHost) {
+    showStatus("Open a website first.", true);
+    return false;
+  }
+  if (hasSitePermission) return true;
+  try {
+    const origin = permissionPatternForHost(activeHost);
+    hasSitePermission = await chrome.permissions.contains({ origins: [origin] }) ||
+      await chrome.permissions.request({ origins: [origin] });
+  } catch {
+    hasSitePermission = false;
+  }
+  if (!hasSitePermission) showStatus("Allow site access to " + action + ".", true);
+  return hasSitePermission;
+}
+
+async function pickArea(groupId = "", selectByColor = false, textMode = false) {
   if (!activeTabId || !activeHost) {
     showStatus("Open a website first.", true);
     return;
@@ -525,30 +555,52 @@ async function pickArea(groupId = "", selectByColor = false) {
     showStatus("Save a color first.", true);
     return;
   }
-  if (!hasSitePermission) {
-    try {
-      const origin = permissionPatternForHost(activeHost);
-      hasSitePermission = await chrome.permissions.contains({ origins: [origin] }) ||
-        await chrome.permissions.request({ origins: [origin] });
-    } catch {
-      hasSitePermission = false;
-    }
-    if (!hasSitePermission) {
-      showStatus("Allow site access to pick areas.", true);
-      return;
-    }
-  }
+  if (!await ensureSiteAccess("pick areas")) return;
   try {
     await chrome.scripting.executeScript({
       target: { tabId: activeTabId },
-      func: (id, byColor) => { window.__kaleidoPickerOptions = { groupId: id, selectByColor: byColor }; },
-      args: [groupId, selectByColor]
+      func: (id, byColor, forText) => { window.__kaleidoPickerOptions = { groupId: id, selectByColor: byColor, textMode: forText }; },
+      args: [groupId, selectByColor, textMode]
     });
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
-    showStatus(selectByColor ? "Click a color to find matches." : groupId ? "Pick areas for this group." : "Pick areas for a new group.");
+    showStatus(selectByColor ? "Click a color to find matches." : textMode ? "Select text on the page." : groupId ? "Pick areas for this group." : "Pick areas for a new group.");
   } catch {
     showStatus("This page does not allow picking.", true);
   }
+}
+
+async function applyPageTextColor() {
+  if (!activeTabId || !activeHost) {
+    showStatus("Open a website first.", true);
+    return;
+  }
+  if (!colors.some(color => color.id === activeColorId)) {
+    showStatus("Choose a saved color first.", true);
+    return;
+  }
+  if (!await ensureSiteAccess("change text")) return;
+  const rules = [...(siteRules[activeHost] || [])];
+  const groupId = "page-text-" + activeHost;
+  const existing = rules.find(rule => rule.groupId === groupId);
+  const pageRule = {
+    selector: "body",
+    label: "Whole page text",
+    colorId: activeColorId,
+    groupId,
+    kind: "text",
+    alpha: 1,
+    enabled: true
+  };
+  if (existing) {
+    Object.assign(existing, pageRule);
+    rules.splice(rules.indexOf(existing), 1);
+  }
+  rules.unshift(pageRule);
+  siteRules = { ...siteRules, [activeHost]: rules };
+  await saveUndoableSettings({ siteRules });
+  await refreshTabs();
+  renderTargets();
+  showStatus("Whole page text color updated.");
 }
 
 function migrateRules(oldRules, oldThemes) {
@@ -578,6 +630,8 @@ function migrateRules(oldRules, oldThemes) {
         label: rule.label || rule.selector,
         colorId: color.id,
         groupId,
+        kind: rule.kind === "text" ? "text" : "background",
+        alpha: typeof rule.alpha === "number" && Number.isFinite(rule.alpha) ? Math.max(0, Math.min(1, rule.alpha)) : 1,
         enabled: rule.enabled !== false
       }];
     });
@@ -727,6 +781,8 @@ function validateImportedSettings(data) {
           typeof rule.label !== "string" || rule.label.length > 80 ||
           typeof rule.groupId !== "string" || !rule.groupId || rule.groupId.length > 120 ||
           typeof rule.colorId !== "string" || !colorIds.has(rule.colorId) ||
+          (rule.kind !== undefined && rule.kind !== "text" && rule.kind !== "background") ||
+          (rule.alpha !== undefined && (typeof rule.alpha !== "number" || !Number.isFinite(rule.alpha) || rule.alpha < 0 || rule.alpha > 1)) ||
           (rule.enabled !== undefined && typeof rule.enabled !== "boolean")) {
         throw new Error("The code contains an invalid area.");
       }
@@ -735,6 +791,8 @@ function validateImportedSettings(data) {
         label: rule.label,
         groupId: rule.groupId,
         colorId: rule.colorId,
+        kind: rule.kind === "text" ? "text" : "background",
+        alpha: typeof rule.alpha === "number" ? rule.alpha : 1,
         enabled: rule.enabled !== false
       };
     });
@@ -1050,7 +1108,7 @@ async function reorderArea(groupId, selector, direction) {
   await saveUndoableSettings({ siteRules });
   await refreshTabs();
   renderTargets();
-  showStatus("Areas reordered.");
+  showStatus("Group items reordered.");
 }
 
 async function toggleAreaEnabled(groupId, selector) {
@@ -1062,7 +1120,7 @@ async function toggleAreaEnabled(groupId, selector) {
   await saveUndoableSettings({ siteRules });
   await refreshTabs();
   renderTargets();
-  showStatus("Area setting updated.");
+  showStatus("Item setting updated.");
 }
 
 async function initialize() {
@@ -1075,6 +1133,8 @@ async function initialize() {
   savedSiteSearch.addEventListener("input", renderSavedSites);
   pickAreaButton.addEventListener("click", () => pickArea());
   selectMatchingColorButton.addEventListener("click", () => pickArea("", true));
+  pickTextButton.addEventListener("click", () => pickArea("", false, true));
+  applyPageTextButton.addEventListener("click", applyPageTextColor);
   toggleImportButton.addEventListener("click", toggleImportPanel);
   importCodeInput.addEventListener("input", updateLegacyPassphraseVisibility);
   importSettingsButton.addEventListener("click", importSettings);
