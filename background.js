@@ -25,7 +25,8 @@ function cleanColorLibrary(colors) {
 function cleanRules(rules, colors) {
   if (!Array.isArray(rules)) return [];
   return rules.filter(rule =>
-    rule && typeof rule.selector === "string" && rule.selector.length > 0 && rule.selector.length <= 1000
+    rule && rule.enabled !== false &&
+    typeof rule.selector === "string" && rule.selector.length > 0 && rule.selector.length <= 1000
   ).map(rule => {
     const savedColor = colors.find(color => color.id === rule.colorId);
     const value = savedColor?.value || rule.value;
@@ -80,9 +81,10 @@ async function applyToTab(tab) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
   const host = normalizeHost(url.hostname);
-  const { siteRules = {}, colors = [] } = await chrome.storage.local.get(["siteRules", "colors"]);
+  const { siteRules = {}, colors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "pausedSites"]);
   const domain = matchingDomain(host, siteRules);
-  const rules = domain && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
+  const isPaused = Boolean(pausedSites[domain || host]);
+  const rules = domain && !isPaused && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: applyKaleidoRules, args: [rules] });
   } catch {
@@ -278,6 +280,21 @@ async function clearPreview(message, sendResponse) {
   }
 }
 
+const HISTORY_SETTING_KEYS = ["colors", "siteRules", "pausedSites", "activeColorId", "collapsedGroups"];
+const HISTORY_LIMIT = 15;
+
+async function saveUndoableSettings(changes) {
+  const stored = await chrome.storage.local.get([...HISTORY_SETTING_KEYS, "kaleidoUndo"]);
+  const changedKeys = Object.keys(changes).filter(key => HISTORY_SETTING_KEYS.includes(key));
+  const snapshot = {};
+  for (const key of changedKeys) {
+    snapshot[key] = stored[key] ?? (key === "colors" ? [] : key === "activeColorId" ? "" : {});
+  }
+  const history = Array.isArray(stored.kaleidoUndo) ? stored.kaleidoUndo.slice(-HISTORY_LIMIT + 1) : [];
+  history.push(snapshot);
+  await chrome.storage.local.set({ ...changes, kaleidoUndo: history, kaleidoRedo: [] });
+}
+
 async function savePickedAreas(message, sender, sendResponse) {
   let url;
   try {
@@ -330,13 +347,14 @@ async function savePickedAreas(message, sender, sendResponse) {
       existing.colorId = colorId;
       existing.label = target.label;
       existing.groupId = groupId;
+      existing.enabled = true;
       delete existing.role;
     } else {
-      rules.push({ ...target, colorId, groupId });
+      rules.push({ ...target, colorId, groupId, enabled: true });
     }
   }
   siteRules[domain] = rules;
-  await chrome.storage.local.set({ siteRules, activeColorId: colorId });
+  await saveUndoableSettings({ siteRules, activeColorId: colorId });
   await applyToTab(sender.tab);
   const groupName = summarizeGroups(rules).find(group => group.id === groupId)?.name || "Group";
   sendResponse({ ok: true, domain, rules, count: targets.length, groupId, colorId, groupName });
@@ -350,7 +368,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try { await applyToTab(await chrome.tabs.get(tabId)); } catch { /* Tab may close. */ }
 });
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.siteRules || changes.colors)) void refreshOpenTabs();
+  if (areaName === "local" && (changes.siteRules || changes.colors || changes.pausedSites)) void refreshOpenTabs();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -369,6 +387,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "kaleido-focus-area") {
     void focusAreaOnTab(message, sendResponse);
+    return true;
+  }
+  if (message.type === "kaleido-color-picked") {
+    const value = typeof message.value === "string" ? message.value.toUpperCase() : "";
+    if (!isColor(value)) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    chrome.storage.local.set({ kaleidoSampledColor: value })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (message.type === "kaleido-targets-picked") {
