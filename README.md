@@ -8,7 +8,7 @@ Kaleido lets you recolor specific areas of websites yourself. Pick one or more a
 2. Open `chrome://extensions` in Chrome or `vivaldi://extensions` in Vivaldi.
 3. Turn on **Developer mode**.
 4. Choose **Load unpacked** and select the extracted Kaleido folder containing `manifest.json`.
-5. Open a website and choose **Create a group**.
+5. Open a website and choose **Select an area**.
 
 The first time you pick an area, the browser asks for website access. Kaleido uses that permission to apply the saved areas on websites you choose. You can revoke it in the browser's extension settings.
 
