@@ -144,3 +144,7 @@ footer a:hover { text-decoration: underline; }
 .group-area button.group-area-select.disabled { color: var(--muted); opacity: .6; text-decoration: line-through; }
 .add-color-row { flex-wrap: wrap; }
 .add-color-row #sampleColor { flex: 1 1 105px; }
+
+.collapse-button { border-color: rgba(205,214,244,.28); border-radius: 50%; color: var(--muted); font-size: 13px !important; }
+.collapse-button:hover { color: var(--text); border-color: var(--text); }
+.add-area-button { font-size: 16px !important; }
