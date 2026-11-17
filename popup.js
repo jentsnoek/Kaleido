@@ -31,7 +31,7 @@ const DEFAULT_ROLE_VALUES = {
   accent: "#ECA8BD",
   text: "#CDD6F4"
 };
-const ALL_SITES_PATTERN = "*://*/*";
+
 const colorLibrary = document.getElementById("colorLibrary");
 const colorCount = document.getElementById("colorCount");
 const siteName = document.getElementById("siteName");
@@ -64,13 +64,20 @@ let previewDirty = false;
 let previewTimer = null;
 let groupPreviewTimer = null;
 let groupColorPreviewActive = false;
-let hasAllSitesPermission = false;
+let statusTimer = null;
+let transferUpdateTimer = null;
+let transferCodeGeneration = 0;
+let hasSitePermission = false;
 let focusedAreaKey = "";
 let focusedAreaSelector = "";
 
 const transferPasswordInput = document.getElementById("transferPassword");
 const transferCodeInput = document.getElementById("transferCode");
-const exportSettingsButton = document.getElementById("exportSettings");
+const importCodeInput = document.getElementById("importCode");
+const importPanel = document.getElementById("importPanel");
+const legacyPassphraseRow = document.getElementById("legacyPassphraseRow");
+const transferCodeState = document.getElementById("transferCodeState");
+const toggleImportButton = document.getElementById("toggleImport");
 const importSettingsButton = document.getElementById("importSettings");
 const copySettingsButton = document.getElementById("copySettings");
 
@@ -78,6 +85,12 @@ function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
   host = host.replace(/^https?:\/\//, "").split(/[/?#]/)[0];
   return host.replace(/:\d+$/, "").replace(/^www\./, "");
+}
+
+function permissionPatternForHost(host) {
+  const normalized = normalizeHost(host);
+  const matchHost = normalized.includes(".") ? "*." + normalized : normalized;
+  return "*://" + matchHost + "/*";
 }
 
 function isHex(value) {
@@ -107,8 +120,10 @@ function addColor(value, id = "") {
 }
 
 function showStatus(message, isError = false) {
+  clearTimeout(statusTimer);
   statusNode.textContent = message;
   statusNode.classList.toggle("error", isError);
+  statusTimer = setTimeout(() => { statusNode.textContent = ""; }, isError ? 5000 : 2600);
 }
 
 function schedulePreview() {
@@ -495,7 +510,7 @@ async function startEyedropper() {
   }
   try {
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["eyedropper.js"] });
-    showStatus("Click a page area to sample its background color. Press Escape to cancel.");
+    showStatus("Click a color. Esc cancels.");
   } catch {
     showStatus("Kaleido could not start the page color picker.", true);
   }
@@ -503,21 +518,23 @@ async function startEyedropper() {
 
 async function pickArea(groupId = "", selectByColor = false) {
   if (!activeTabId || !activeHost) {
-    showStatus("Open the webpage you want to color first.", true);
+    showStatus("Open a website first.", true);
     return;
   }
   if (!colors.length) {
-    showStatus("Save at least one color first.", true);
+    showStatus("Save a color first.", true);
     return;
   }
-  if (!hasAllSitesPermission) {
+  if (!hasSitePermission) {
     try {
-      hasAllSitesPermission = await chrome.permissions.request({ origins: [ALL_SITES_PATTERN] });
+      const origin = permissionPatternForHost(activeHost);
+      hasSitePermission = await chrome.permissions.contains({ origins: [origin] }) ||
+        await chrome.permissions.request({ origins: [origin] });
     } catch {
-      hasAllSitesPermission = false;
+      hasSitePermission = false;
     }
-    if (!hasAllSitesPermission) {
-      showStatus("Kaleido needs website access before it can save picked areas.", true);
+    if (!hasSitePermission) {
+      showStatus("Allow site access to pick areas.", true);
       return;
     }
   }
@@ -528,9 +545,9 @@ async function pickArea(groupId = "", selectByColor = false) {
       args: [groupId, selectByColor]
     });
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
-    showStatus(selectByColor ? "Click a solid page color to select matching areas." : groupId ? "Select areas to add to this group." : "Select areas for a new color group.");
+    showStatus(selectByColor ? "Click a color to find matches." : groupId ? "Pick areas for this group." : "Pick areas for a new group.");
   } catch {
-    showStatus("This page does not allow Kaleido's area picker.", true);
+    showStatus("This page does not allow picking.", true);
   }
 }
 
@@ -630,47 +647,52 @@ async function deriveTransferKey(passphrase, salt) {
   );
 }
 
-async function exportSettings() {
-  const passphrase = transferPasswordInput.value;
-  if (passphrase.length < 8) {
-    showStatus("Use a password or passphrase with at least 8 characters.", true);
-    return;
-  }
+async function createAutomaticTransferCode() {
+  const saved = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "collapsedGroups", "pausedSites"]);
+  const payload = {
+    format: "kaleido-settings",
+    version: 1,
+    colors: Array.isArray(saved.colors) ? saved.colors : colors,
+    siteRules: saved.siteRules && typeof saved.siteRules === "object" ? saved.siteRules : siteRules,
+    activeColorId: saved.activeColorId || activeColorId,
+    collapsedGroups: saved.collapsedGroups || collapsedGroups,
+    pausedSites: saved.pausedSites || pausedSites
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  const compressed = await compressTransferBytes(bytes);
+  return "KAL3." + bytesToBase64Url(compressed);
+}
+
+async function refreshAutomaticTransferCode() {
+  const generation = ++transferCodeGeneration;
+  transferCodeState.textContent = "Updating…";
   try {
-    const payload = {
-      format: "kaleido-settings",
-      version: 1,
-      colors,
-      siteRules,
-      activeColorId,
-      collapsedGroups,
-      pausedSites
-    };
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await deriveTransferKey(passphrase, salt);
-    let payloadBytes = new TextEncoder().encode(JSON.stringify(payload));
-    let codeVersion = "KAL1";
-    if (typeof CompressionStream !== "undefined") {
-      payloadBytes = await compressTransferBytes(payloadBytes);
-      codeVersion = "KAL2";
-    }
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      key,
-      payloadBytes
-    );
-    transferCodeInput.value = [
-      codeVersion,
-      bytesToBase64Url(salt),
-      bytesToBase64Url(iv),
-      bytesToBase64Url(new Uint8Array(ciphertext))
-    ].join(".");
-    copySettingsButton.hidden = false;
-    showStatus("Encrypted transfer code created. Keep the passphrase with it.");
+    const code = await createAutomaticTransferCode();
+    if (generation !== transferCodeGeneration) return;
+    transferCodeInput.value = code;
+    transferCodeState.textContent = "Up to date";
   } catch {
-    showStatus("Kaleido could not create the encrypted code.", true);
+    if (generation !== transferCodeGeneration) return;
+    transferCodeInput.value = "";
+    transferCodeState.textContent = "Code unavailable";
   }
+}
+
+function scheduleTransferCodeUpdate() {
+  clearTimeout(transferUpdateTimer);
+  transferUpdateTimer = setTimeout(() => { void refreshAutomaticTransferCode(); }, 180);
+}
+
+function updateLegacyPassphraseVisibility() {
+  const code = importCodeInput.value.trim();
+  legacyPassphraseRow.hidden = !(code.startsWith("KAL1.") || code.startsWith("KAL2."));
+}
+
+function toggleImportPanel() {
+  const expanded = importPanel.hidden;
+  importPanel.hidden = !expanded;
+  toggleImportButton.setAttribute("aria-expanded", String(expanded));
+  toggleImportButton.textContent = expanded ? "⌃" : "⌄";
 }
 
 function validateImportedSettings(data) {
@@ -743,32 +765,41 @@ function validateImportedSettings(data) {
 }
 
 async function importSettings() {
-  const code = transferCodeInput.value.trim();
-  const passphrase = transferPasswordInput.value;
-  if (passphrase.length < 8) {
-    showStatus("Enter the passphrase used to create the code.", true);
+  const code = importCodeInput.value.trim();
+  if (!code || code.length > 20000000) {
+    showStatus("Paste a valid Kaleido code.", true);
     return;
   }
-  if ((!code.startsWith("KAL1.") && !code.startsWith("KAL2.")) || code.length > 20000000) {
-    showStatus("Paste a Kaleido transfer code into the box first.", true);
-    return;
-  }
-  if (!window.confirm("Importing replaces the Kaleido colors, groups, and website states currently saved on this device. Continue?")) return;
 
   try {
-    const [prefix, saltText, ivText, ciphertextText, extra] = code.split(".");
-    if ((prefix !== "KAL1" && prefix !== "KAL2") || !saltText || !ivText || !ciphertextText || extra) throw new Error("This code is not valid.");
-    const salt = base64UrlToBytes(saltText);
-    const iv = base64UrlToBytes(ivText);
-    const ciphertext = base64UrlToBytes(ciphertextText);
-    if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) throw new Error("This code is not valid.");
-    const key = await deriveTransferKey(passphrase, salt);
-    const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
-    const plainBytes = prefix === "KAL2"
-      ? await decompressTransferBytes(new Uint8Array(decrypted))
-      : new Uint8Array(decrypted);
+    const [prefix, ...parts] = code.split(".");
+    let plainBytes;
+    if (prefix === "KAL3") {
+      if (parts.length !== 1 || !parts[0]) throw new Error("Invalid code.");
+      plainBytes = await decompressTransferBytes(base64UrlToBytes(parts[0]));
+    } else if (prefix === "KAL1" || prefix === "KAL2") {
+      if (parts.length !== 3 || !parts.every(Boolean)) throw new Error("Invalid old code.");
+      if (transferPasswordInput.value.length < 8) {
+        updateLegacyPassphraseVisibility();
+        showStatus("Enter the old code passphrase.", true);
+        return;
+      }
+      const salt = base64UrlToBytes(parts[0]);
+      const iv = base64UrlToBytes(parts[1]);
+      const ciphertext = base64UrlToBytes(parts[2]);
+      if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 16) throw new Error("Invalid old code.");
+      const key = await deriveTransferKey(transferPasswordInput.value, salt);
+      const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+      plainBytes = prefix === "KAL2"
+        ? await decompressTransferBytes(new Uint8Array(decrypted))
+        : new Uint8Array(decrypted);
+    } else {
+      throw new Error("Unknown code.");
+    }
+
     const data = JSON.parse(new TextDecoder().decode(plainBytes));
     const imported = validateImportedSettings(data);
+    if (!window.confirm("Replace this device’s Kaleido settings with the imported code?")) return;
 
     colors = DEFAULT_COLORS.map(color => ({ ...color }));
     imported.colors.forEach(color => addColor(color.value, color.id));
@@ -785,24 +816,27 @@ async function importSettings() {
     renderTargets();
     renderSiteToggle();
     renderSavedSites();
-    showStatus("Colors, groups, and website states imported.");
+    importCodeInput.value = "";
+    transferPasswordInput.value = "";
+    updateLegacyPassphraseVisibility();
+    showStatus("Settings imported.");
   } catch {
-    showStatus("Could not unlock that code. Check the code and passphrase.", true);
+    showStatus("Could not import that code.", true);
   }
 }
 
 async function copySettingsCode() {
-  if (!transferCodeInput.value) return;
+  const code = transferCodeInput.value;
+  if (!code) return;
   try {
-    await navigator.clipboard.writeText(transferCodeInput.value);
-    showStatus("Encrypted code copied.");
+    await navigator.clipboard.writeText(code);
+    showStatus("Code copied.");
   } catch {
     transferCodeInput.focus();
     transferCodeInput.select();
-    showStatus("Select and copy the encrypted code from the box.");
+    showStatus("Select and copy the code.");
   }
 }
-
 async function clearFocusedArea() {
   const selector = focusedAreaSelector;
   focusedAreaKey = "";
@@ -924,7 +958,7 @@ async function resetCurrentSite() {
     return;
   }
   if (!window.confirm(
-    "Reset Kaleido on " + activeHost + "? This removes its saved areas for this host and hides any shared parent-domain colors here. Your saved colors and other websites will stay unchanged. You can Undo this."
+    "Reset Kaleido on " + activeHost + "? This removes its areas here. Undo can restore them."
   )) return;
 
   await restoreGroupColorPreview();
@@ -1041,9 +1075,11 @@ async function initialize() {
   savedSiteSearch.addEventListener("input", renderSavedSites);
   pickAreaButton.addEventListener("click", () => pickArea());
   selectMatchingColorButton.addEventListener("click", () => pickArea("", true));
-  exportSettingsButton.addEventListener("click", exportSettings);
+  toggleImportButton.addEventListener("click", toggleImportPanel);
+  importCodeInput.addEventListener("input", updateLegacyPassphraseVisibility);
   importSettingsButton.addEventListener("click", importSettings);
   copySettingsButton.addEventListener("click", copySettingsCode);
+  updateLegacyPassphraseVisibility();
   const result = await chrome.storage.local.get([
     "colors", "siteRules", "activeColorId", "themes", "palettes", "collapsedGroups",
     "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor"
@@ -1072,7 +1108,7 @@ async function initialize() {
   undoHistory = Array.isArray(result.kaleidoUndo) ? result.kaleidoUndo : [];
   redoHistory = Array.isArray(result.kaleidoRedo) ? result.kaleidoRedo : [];
   activeColorId = colors.some(color => color.id === result.activeColorId) ? result.activeColorId : colors[0]?.id || "";
-  hasAllSitesPermission = await chrome.permissions.contains({ origins: [ALL_SITES_PATTERN] });
+  hasSitePermission = false;
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   try {
@@ -1087,6 +1123,9 @@ async function initialize() {
   } catch {
     siteName.textContent = "Open a webpage";
   }
+  if (activeHost) {
+    try { hasSitePermission = await chrome.permissions.contains({ origins: [permissionPatternForHost(activeHost)] }); } catch { hasSitePermission = false; }
+  }
 
   await chrome.storage.local.set({ colors, siteRules, activeColorId, collapsedGroups });
   renderHistoryButtons();
@@ -1096,14 +1135,23 @@ async function initialize() {
   renderTargets();
   if (isHex(result.kaleidoSampledColor)) {
     newColorValue.value = result.kaleidoSampledColor.toUpperCase();
-    showStatus("Color sampled. Save it to add it to your library.");
+    showStatus("Color sampled. Save it to keep it.");
     await chrome.storage.local.remove("kaleidoSampledColor");
   }
+  await refreshAutomaticTransferCode();
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  const transferKeys = ["colors", "siteRules", "activeColorId", "collapsedGroups", "pausedSites"];
+  if (transferKeys.some(key => Object.prototype.hasOwnProperty.call(changes, key))) scheduleTransferCodeUpdate();
+});
 
 window.addEventListener("pagehide", () => {
   clearTimeout(previewTimer);
   clearTimeout(groupPreviewTimer);
+  clearTimeout(statusTimer);
+  clearTimeout(transferUpdateTimer);
   if (focusedAreaSelector && activeTabId) {
     try { void chrome.runtime.sendMessage({ type: "kaleido-focus-area", tabId: activeTabId, selector: focusedAreaSelector, active: false }); } catch { /* Popup may close. */ }
   }
@@ -1112,5 +1160,5 @@ window.addEventListener("pagehide", () => {
   }
 });
 
-initialize().catch(() => showStatus("Kaleido could not load this page.", true));
+initialize().catch(() => showStatus("Could not load Kaleido.", true));
 
