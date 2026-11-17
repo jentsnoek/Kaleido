@@ -43,6 +43,7 @@ const saveColorButton = document.getElementById("saveColor");
 const sampleColorButton = document.getElementById("sampleColor");
 const toggleSiteColorsButton = document.getElementById("toggleSiteColors");
 const siteToggleLabel = document.getElementById("siteToggleLabel");
+const resetSiteButton = document.getElementById("resetSite");
 const undoButton = document.getElementById("undoChange");
 const redoButton = document.getElementById("redoChange");
 const savedSiteSearch = document.getElementById("savedSiteSearch");
@@ -892,6 +893,7 @@ function matchingSavedDomain(host) {
 }
 
 function activePauseKey() {
+  if (pausedSites[activeHost]) return activeHost;
   return matchingSavedDomain(activeHost) || activeHost;
 }
 
@@ -900,12 +902,46 @@ function renderSiteToggle() {
   const key = activePauseKey();
   const isPaused = Boolean(key && pausedSites[key]);
   toggleSiteColorsButton.disabled = !canToggle;
+  resetSiteButton.disabled = !canToggle;
   toggleSiteColorsButton.classList.toggle("paused", isPaused);
   siteToggleLabel.textContent = isPaused ? "Off" : "On";
   toggleSiteColorsButton.setAttribute("aria-checked", String(!isPaused));
   toggleSiteColorsButton.title = isPaused
     ? "Turn Kaleido colors on for this website"
     : "Turn Kaleido colors off for this website";
+}
+
+async function resetCurrentSite() {
+  if (!activeHost) return;
+  const existingRules = siteRules[activeHost] || [];
+  const inheritedDomain = matchingSavedDomain(activeHost);
+  const hasInheritedRules = Boolean(inheritedDomain && inheritedDomain !== activeHost);
+  const collapsedPrefix = activeHost + ":";
+  const hasCollapsedSettings = Object.keys(collapsedGroups).some(key => key.startsWith(collapsedPrefix));
+  if (!existingRules.length && !pausedSites[activeHost] && !hasCollapsedSettings && !hasInheritedRules) {
+    showStatus("There are no saved Kaleido changes for this website.");
+    return;
+  }
+  if (!window.confirm(
+    "Reset Kaleido on " + activeHost + "? This removes its saved areas for this host and hides any shared parent-domain colors here. Your saved colors and other websites will stay unchanged. You can Undo this."
+  )) return;
+
+  await restoreGroupColorPreview();
+  await clearFocusedArea();
+  siteRules = { ...siteRules };
+  delete siteRules[activeHost];
+  pausedSites = { ...pausedSites };
+  if (hasInheritedRules) pausedSites[activeHost] = true;
+  else delete pausedSites[activeHost];
+  collapsedGroups = Object.fromEntries(
+    Object.entries(collapsedGroups).filter(([key]) => !key.startsWith(collapsedPrefix))
+  );
+  openGroupPaletteId = "";
+  await saveUndoableSettings({ siteRules, pausedSites, collapsedGroups });
+  await refreshTabs();
+  renderColorLibrary();
+  renderTargets();
+  showStatus("Reset " + activeHost + ". Use Undo to restore its settings.");
 }
 
 async function toggleSiteColors() {
@@ -998,6 +1034,7 @@ async function initialize() {
   saveColorButton.addEventListener("click", saveColor);
   sampleColorButton.addEventListener("click", startEyedropper);
   toggleSiteColorsButton.addEventListener("click", toggleSiteColors);
+  resetSiteButton.addEventListener("click", resetCurrentSite);
   undoButton.addEventListener("click", () => applyHistory("undo"));
   redoButton.addEventListener("click", () => applyHistory("redo"));
   savedSiteSearch.addEventListener("input", renderSavedSites);
