@@ -22,16 +22,18 @@ function cleanColorLibrary(colors) {
   ).map(color => ({ id: color.id, value: color.value.toUpperCase() }));
 }
 
-function cleanRules(rules, colors) {
+function cleanRules(rules, colors, textColors = []) {
   if (!Array.isArray(rules)) return [];
   return rules.filter(rule =>
     rule && rule.enabled !== false &&
     typeof rule.selector === "string" && rule.selector.length > 0 && rule.selector.length <= 1000
   ).map(rule => {
-    const savedColor = colors.find(color => color.id === rule.colorId);
+    const kind = rule.kind === "text" ? "text" : "background";
+    const savedColor = kind === "text"
+      ? textColors.find(color => color.id === rule.colorId) || colors.find(color => color.id === rule.colorId)
+      : colors.find(color => color.id === rule.colorId);
     const value = savedColor?.value || rule.value;
     if (!isColor(value)) return null;
-    const kind = rule.kind === "text" ? "text" : "background";
     const alpha = typeof rule.alpha === "number" && Number.isFinite(rule.alpha)
       ? Math.max(0, Math.min(1, rule.alpha))
       : 1;
@@ -90,10 +92,12 @@ async function applyToTab(tab, injectImmediately = true) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
 
   const host = normalizeHost(url.hostname);
-  const { siteRules = {}, colors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "pausedSites"]);
+  const { siteRules = {}, colors = [], textColors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "textColors", "pausedSites"]);
   const domain = matchingDomain(host, siteRules);
   const isPaused = Boolean(pausedSites[host] || pausedSites[domain || host]);
-  const rules = domain && !isPaused && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
+  const rules = domain && !isPaused && await hasSiteAccess(domain)
+    ? cleanRules(siteRules[domain], cleanColorLibrary(colors), cleanColorLibrary(textColors))
+    : [];
   try {
     const currentTab = await chrome.tabs.get(tab.id);
     if (currentTab.url !== tab.url) return false;
@@ -166,7 +170,7 @@ function applyKaleidoRules(rules) {
   style.setAttribute("data-kaleido-styles", "true");
   style.textContent = safeRules.map((rule, index) => {
     if (rule.kind === "text") {
-      return `[data-kaleido-text-target="${index}"], [data-kaleido-text-target="${index}"] * { color: ${rule.value} !important; }`;
+      return `[data-kaleido-text-target="${index}"] { color: ${rule.value} !important; }`;
     }
     const channels = rule.value.match(/[0-9a-f]{2}/gi).map(channel => parseInt(channel, 16));
     const value = rule.alpha < 0.999 ? `rgba(${channels.join(",")},${rule.alpha})` : rule.value;
@@ -292,7 +296,8 @@ async function refreshOpenTabs() {
 
 async function applyPreview(message, sendResponse) {
   const colors = cleanColorLibrary(message.colors);
-  const rules = cleanRules(message.rules, colors);
+  const textColors = cleanColorLibrary(message.textColors);
+  const rules = cleanRules(message.rules, colors, textColors);
   const tabId = Number(message.tabId);
   if (!Number.isInteger(tabId)) {
     sendResponse({ ok: false });
@@ -316,7 +321,7 @@ async function clearPreview(message, sendResponse) {
   }
 }
 
-const HISTORY_SETTING_KEYS = ["colors", "siteRules", "pausedSites", "activeColorId", "collapsedGroups"];
+const HISTORY_SETTING_KEYS = ["colors", "textColors", "siteRules", "pausedSites", "activeColorId", "activeTextColorId", "collapsedGroups"];
 const HISTORY_LIMIT = 15;
 
 async function saveUndoableSettings(changes) {
@@ -324,7 +329,7 @@ async function saveUndoableSettings(changes) {
   const changedKeys = Object.keys(changes).filter(key => HISTORY_SETTING_KEYS.includes(key));
   const snapshot = {};
   for (const key of changedKeys) {
-    snapshot[key] = stored[key] ?? (key === "colors" ? [] : key === "activeColorId" ? "" : {});
+    snapshot[key] = stored[key] ?? (key === "colors" || key === "textColors" ? [] : key === "activeColorId" || key === "activeTextColorId" ? "" : {});
   }
   const history = Array.isArray(stored.kaleidoUndo) ? stored.kaleidoUndo.slice(-HISTORY_LIMIT + 1) : [];
   history.push(snapshot);
@@ -361,8 +366,11 @@ async function savePickedAreas(message, sender, sendResponse) {
   }
 
   const domain = normalizeHost(url.hostname);
-  const { siteRules = {}, colors = [] } = await chrome.storage.local.get(["siteRules", "colors"]);
+  const { siteRules = {}, colors = [], textColors = [] } = await chrome.storage.local.get(["siteRules", "colors", "textColors"]);
   const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
+  const availableColors = kind === "text"
+    ? [...cleanColorLibrary(textColors), ...cleanColorLibrary(colors)]
+    : cleanColorLibrary(colors);
   if (groupId) {
     const existingGroup = rules.find(rule => rule.groupId === groupId);
     if (!existingGroup || (existingGroup.kind === "text" ? "text" : "background") !== kind) {
@@ -371,13 +379,13 @@ async function savePickedAreas(message, sender, sendResponse) {
     }
     colorId = existingGroup.colorId;
   } else {
-    if (!colorId || !cleanColorLibrary(colors).some(color => color.id === colorId)) {
+    if (!colorId || !availableColors.some(color => color.id === colorId)) {
       sendResponse({ ok: false });
       return;
     }
     groupId = `group-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   }
-  if (!cleanColorLibrary(colors).some(color => color.id === colorId)) {
+  if (!availableColors.some(color => color.id === colorId)) {
     sendResponse({ ok: false });
     return;
   }
@@ -399,7 +407,9 @@ async function savePickedAreas(message, sender, sendResponse) {
     }
   }
   siteRules[domain] = rules;
-  await saveUndoableSettings({ siteRules, activeColorId: colorId });
+  await saveUndoableSettings(kind === "text"
+    ? { siteRules, activeTextColorId: colorId }
+    : { siteRules, activeColorId: colorId });
   await applyToTab(sender.tab);
   const groups = summarizeGroups(rules);
   const groupIndex = groups.findIndex(group => group.id === groupId);
@@ -439,7 +449,7 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try { await applyToTab(await chrome.tabs.get(tabId)); } catch { /* Tab may close. */ }
 });
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.siteRules || changes.colors || changes.pausedSites)) void refreshOpenTabs();
+  if (areaName === "local" && (changes.siteRules || changes.colors || changes.textColors || changes.pausedSites)) void refreshOpenTabs();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -476,15 +486,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "kaleido-get-colors") {
-    chrome.storage.local.get(["colors", "activeColorId", "siteRules"]).then(result => {
+    chrome.storage.local.get(["colors", "textColors", "activeColorId", "activeTextColorId", "siteRules"]).then(result => {
       let domain = "";
       try { domain = normalizeHost(new URL(sender.tab?.url || "").hostname); } catch { /* No website context. */ }
+      const colors = cleanColorLibrary(result.colors);
+      const textColors = cleanColorLibrary(result.textColors);
+      const knownTextIds = new Set(textColors.map(color => color.id));
+      for (const rule of result.siteRules?.[domain] || []) {
+        if (rule?.kind === "text" && !knownTextIds.has(rule.colorId)) {
+          const legacyColor = colors.find(color => color.id === rule.colorId);
+          if (legacyColor) {
+            textColors.push(legacyColor);
+            knownTextIds.add(legacyColor.id);
+          }
+        }
+      }
       sendResponse({
-        colors: cleanColorLibrary(result.colors),
+        colors,
         activeColorId: result.activeColorId || "",
+        textColors,
+        activeTextColorId: result.activeTextColorId || "",
         groups: summarizeGroups(result.siteRules?.[domain])
       });
-    }).catch(() => sendResponse({ colors: [], activeColorId: "" }));
+    }).catch(() => sendResponse({ colors: [], textColors: [], activeColorId: "", activeTextColorId: "" }));
     return true;
   }
 });
