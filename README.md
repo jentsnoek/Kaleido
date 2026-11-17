@@ -1,6 +1,6 @@
 # Kaleido
 
-Kaleido lets you recolor website areas. Use **Select an area** to pick parts yourself, or **Select matching color** to find similar visible backgrounds. Review the highlights, remove any you do not want, then choose a color. Gradients, images, text, and borders are not matched.
+Kaleido lets you recolor website areas. Use **Select an area** to pick parts yourself, or **Select matching color** to find similar visible backgrounds. Review the highlights, remove any you do not want, then choose a color. Gradients, images, text, and borders are not matched. Selected backgrounds keep their original transparency when recolored.
 
 ## Install the development build
 
@@ -11,6 +11,10 @@ Kaleido lets you recolor website areas. Use **Select an area** to pick parts you
 5. Open a website and choose **Select an area** or **Select matching color**.
 
 The first time you pick an area, the browser asks for website access. Kaleido uses that permission to apply the saved areas on websites you choose. You can revoke it in the browser's extension settings.
+
+## Text colors
+
+Choose **Select text** to pick one or more text areas, or **Color all text** to recolor the whole page. Text color is controlled separately from background color, and chosen text groups can be edited or removed like other groups.
 
 ## Pick and color an area
 
