@@ -38,6 +38,7 @@ const siteName = document.getElementById("siteName");
 const statusNode = document.getElementById("status");
 const targetList = document.getElementById("targetList");
 const pickAreaButton = document.getElementById("pickArea");
+const selectMatchingColorButton = document.getElementById("selectMatchingColor");
 const newColorValue = document.getElementById("newColorValue");
 const saveColorButton = document.getElementById("saveColor");
 const sampleColorButton = document.getElementById("sampleColor");
@@ -500,7 +501,7 @@ async function startEyedropper() {
   }
 }
 
-async function pickArea(groupId = "") {
+async function pickArea(groupId = "", selectByColor = false) {
   if (!activeTabId || !activeHost) {
     showStatus("Open the webpage you want to color first.", true);
     return;
@@ -523,11 +524,11 @@ async function pickArea(groupId = "") {
   try {
     await chrome.scripting.executeScript({
       target: { tabId: activeTabId },
-      func: id => { window.__kaleidoPickerOptions = { groupId: id }; },
-      args: [groupId]
+      func: (id, byColor) => { window.__kaleidoPickerOptions = { groupId: id, selectByColor: byColor }; },
+      args: [groupId, selectByColor]
     });
     await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["picker.js"] });
-    showStatus(groupId ? "Select areas to add to this group." : "Select areas for a new color group.");
+    showStatus(selectByColor ? "Click a solid page color to select matching areas." : groupId ? "Select areas to add to this group." : "Select areas for a new color group.");
   } catch {
     showStatus("This page does not allow Kaleido's area picker.", true);
   }
@@ -1039,6 +1040,7 @@ async function initialize() {
   redoButton.addEventListener("click", () => applyHistory("redo"));
   savedSiteSearch.addEventListener("input", renderSavedSites);
   pickAreaButton.addEventListener("click", () => pickArea());
+  selectMatchingColorButton.addEventListener("click", () => pickArea("", true));
   exportSettingsButton.addEventListener("click", exportSettings);
   importSettingsButton.addEventListener("click", importSettings);
   copySettingsButton.addEventListener("click", copySettingsCode);
