@@ -27,9 +27,17 @@
       <div class="current-site">
         <span>On this site</span>
         <strong id="siteName">Open a webpage</strong>
-        <button id="toggleSiteColors" class="site-toggle" type="button" disabled>Pause colors</button>
+        <button id="toggleSiteColors" class="site-toggle" type="button" role="switch" aria-checked="true" aria-label="Kaleido colors on this website" disabled>
+          <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+          <span id="siteToggleLabel">On</span>
+        </button>
       </div>
     </header>
+
+    <section class="section pick-section">
+      <p class="pick-intro">Pick one or more parts of this page. Kaleido will turn them into a color group.</p>
+      <button id="pickArea" class="primary-button pick-area-hero" type="button">Select an area</button>
+    </section>
 
     <section class="section colors-section">
       <div class="section-heading">
@@ -41,7 +49,11 @@
       <div class="add-color-row">
         <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
         <button id="saveColor" class="small-button" type="button">Save color</button>
-        <button id="sampleColor" class="small-button" type="button">Pick from page</button>
+        <button id="sampleColor" class="color-eyedropper-button" type="button" title="Pick a color from the page" aria-label="Pick a color from the page">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m14.1 6.5 3.4 3.4M4 20l4.9-.9L19 9a2.4 2.4 0 0 0-3.4-3.4L5.5 15.7 4 20Zm4.5-4.7 2.2 2.2"/>
+          </svg>
+        </button>
       </div>
       <p id="status" class="status" aria-live="polite"></p>
     </section>
@@ -59,8 +71,7 @@
         <input id="savedSiteSearch" class="saved-site-search" type="search" placeholder="Search websites" aria-label="Search saved websites">
         <div id="savedSiteResults" class="saved-site-results"></div>
       </details>
-      <p class="hint">Areas picked together share a color. Add or remove areas or recolor a whole group here.</p>
-      <button id="pickArea" class="primary-button" type="button">Select an area</button>
+      <p class="hint">Manage groups and areas you have already picked on this website.</p>
       <div id="targetList" class="target-list"></div>
     </section>
 
