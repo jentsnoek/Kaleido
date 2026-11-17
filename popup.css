@@ -182,3 +182,7 @@ footer a:hover { text-decoration: underline; }
 .group-color:hover, .group-color:focus-visible { transform: scale(1.08); outline: 2px solid var(--text); outline-offset: 2px; box-shadow: 0 0 12px rgba(236,168,189,.55); }
 
 .color-tools .edit-color { width: 18px; height: 18px; }
+
+.reset-page-button { border: 1px solid rgba(229,166,182,.25); border-radius: 6px; padding: 4px 7px; color: #E5A6B6; background: rgba(229,166,182,.06); font: 600 9px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
+.reset-page-button:hover:not(:disabled) { border-color: #E5A6B6; background: rgba(229,166,182,.14); }
+.reset-page-button:disabled { opacity: .35; cursor: default; }
