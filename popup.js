@@ -257,8 +257,8 @@ function renderTargets() {
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "group-icon-button collapse-button";
-    toggle.textContent = isCollapsed ? "+" : "-";
-    toggle.title = isCollapsed ? "Expand group" : "Minimize group";
+    toggle.textContent = isCollapsed ? "▸" : "▾";
+    toggle.title = isCollapsed ? "Expand this group" : "Minimize this group";
     toggle.setAttribute("aria-label", isCollapsed ? `Expand Group ${groupIndex + 1}` : `Minimize Group ${groupIndex + 1}`);
     toggle.setAttribute("aria-expanded", String(!isCollapsed));
     toggle.addEventListener("click", async () => {
