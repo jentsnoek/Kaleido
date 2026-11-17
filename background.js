@@ -83,7 +83,7 @@ async function applyToTab(tab) {
   const host = normalizeHost(url.hostname);
   const { siteRules = {}, colors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "pausedSites"]);
   const domain = matchingDomain(host, siteRules);
-  const isPaused = Boolean(pausedSites[domain || host]);
+  const isPaused = Boolean(pausedSites[host] || pausedSites[domain || host]);
   const rules = domain && !isPaused && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
   try {
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: applyKaleidoRules, args: [rules] });
