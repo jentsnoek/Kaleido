@@ -35,9 +35,9 @@
     </header>
 
     <section class="section pick-section">
-      <p class="pick-intro">Select areas or match a page color.</p>
+      <p class="pick-intro">Select areas or pick one by its color.</p>
       <button id="pickArea" class="primary-button pick-area-hero" type="button">Select an area</button>
-      <button id="selectMatchingColor" class="secondary-pick-button" type="button">Select matching color</button>
+      <button id="selectMatchingColor" class="secondary-pick-button" type="button">Pick area by color</button>
     </section>
 
     <section class="section colors-section">
@@ -60,9 +60,15 @@
 
     <section class="section text-section">
       <div class="section-heading">
-        <h2>Text color</h2>
+        <h2>Text colors</h2>
+        <span id="textColorCount" class="count-pill">24</span>
       </div>
-      <p class="hint">Choose a color above, then change all text or select specific text.</p>
+      <p class="hint">Pick a text color, then select text or color all text.</p>
+      <div id="textColorLibrary" class="color-library"></div>
+      <div class="add-color-row">
+        <input id="newTextColorValue" class="new-color-value" type="color" value="#F4F1EA" aria-label="Choose a text color to save">
+        <button id="saveTextColor" class="small-button" type="button">Save text color</button>
+      </div>
       <div class="text-actions">
         <button id="pickText" class="secondary-pick-button" type="button">Select text</button>
         <button id="applyPageText" class="secondary-pick-button" type="button">Color all text</button>
@@ -97,7 +103,7 @@
         <button id="toggleImport" class="transfer-icon-button transfer-arrow" type="button" aria-label="Open import" aria-controls="importPanel" aria-expanded="false" title="Import a code">⌄</button>
       </div>
       <textarea id="transferCode" class="transfer-code" rows="2" spellcheck="false" readonly aria-label="Your device code" placeholder="Creating code…"></textarea>
-      <p class="transfer-note">Compressed, not encrypted. Anyone with the code can import it.</p>
+      <p class="transfer-note">Compressed offline code. It grows with your saved areas; tiny codes need online storage. Anyone with it can import your settings.</p>
       <div id="importPanel" class="import-panel" hidden>
         <label class="transfer-label" for="importCode">Paste a code</label>
         <textarea id="importCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Paste a Kaleido code here"></textarea>
