@@ -63,7 +63,8 @@ h2 { color: #F4D9E3; font-size: 12px; letter-spacing: .35px; text-transform: upp
 .primary-button { width: 100%; border-color: transparent; color: #282025; background: var(--accent); font-size: 11px; }
 .primary-button:hover { filter: brightness(1.06); }
 .primary-button:disabled { opacity: .5; cursor: not-allowed; }
-.status { min-height: 14px; margin-top: 7px; color: var(--accent); font-size: 10px; }
+.status { margin: 0 0 8px; color: var(--accent); font-size: 10px; text-align: center; }
+.status:empty { display: none; }
 .status.error { color: #F0A1A7; }
 .target-list { display: grid; gap: 8px; margin-top: 8px; }
 .target-empty { padding: 3px 1px 0; color: var(--muted); font-size: 10px; }
@@ -101,14 +102,23 @@ footer a:hover { text-decoration: underline; }
 .group-area button.group-area-select.focused { color: #F4D9E3; background: rgba(236,168,189,.16); box-shadow: inset 0 0 0 1px rgba(236,168,189,.5); }
 .group-area .group-area-remove { border: 0; border-radius: 5px; padding: 4px 6px; color: #E5A6B6; background: transparent; font: 600 9px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
 .group-area .group-area-remove:hover { background: rgba(229,166,182,.12); }
-.transfer-section details > summary { color: #F4D9E3; font-size: 11px; font-weight: 650; cursor: pointer; }
-.transfer-section .hint { margin: 8px 0; }
-.transfer-label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 10px; }
-.transfer-password, .transfer-code { width: 100%; border: 1px solid rgba(205,214,244,.2); border-radius: 7px; padding: 7px; color: var(--text); background: rgba(40,32,37,.65); font: 10px "Segoe UI",system-ui,sans-serif; }
+.transfer-header { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.transfer-title { min-width: 0; flex: 1; }
+.transfer-title h2 { color: #F4D9E3; }
+.transfer-header .transfer-note { display: block; margin-top: 3px; }
+.transfer-icon-button { min-width: 36px; height: 30px; border: 1px solid rgba(236,168,189,.28); border-radius: 7px; padding: 4px 7px; color: var(--text); background: rgba(40,32,37,.6); font: 600 10px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
+.transfer-icon-button:hover { border-color: var(--accent); color: var(--accent); }
+.transfer-arrow { width: 30px; min-width: 30px; padding: 2px; font-size: 16px; line-height: 1; }
+.transfer-arrow[aria-expanded="true"] { color: var(--accent); }
+.transfer-code, .transfer-password { width: 100%; border: 1px solid rgba(205,214,244,.2); border-radius: 7px; padding: 7px; color: var(--text); background: rgba(40,32,37,.65); font: 10px "Segoe UI",system-ui,sans-serif; }
 .transfer-code { resize: vertical; overflow-wrap: anywhere; }
+.transfer-code[readonly] { cursor: text; }
 .transfer-password:focus, .transfer-code:focus { outline: 1px solid var(--accent); }
+.transfer-label { display: block; margin: 8px 0 4px; color: var(--muted); font-size: 10px; }
 .transfer-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
-.transfer-note { margin-top: 8px; color: var(--muted); font-size: 9px; }
+.transfer-note { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.35; }
+.import-panel { margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(205,214,244,.12); }
+.import-panel[hidden], #legacyPassphraseRow[hidden] { display: none; }
 
 /* Compact color library */
 .color-library { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
