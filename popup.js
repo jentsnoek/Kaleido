@@ -1,8 +1,29 @@
 const DEFAULT_COLORS = [
   { id: "builtin-dark-plum", value: "#282025", builtIn: true },
+  { id: "builtin-charcoal", value: "#20242B", builtIn: true },
+  { id: "builtin-slate", value: "#475569", builtIn: true },
   { id: "builtin-plum", value: "#553D44", builtIn: true },
+  { id: "builtin-warm-stone", value: "#786C60", builtIn: true },
+  { id: "builtin-taupe", value: "#A58B78", builtIn: true },
+  { id: "builtin-beige", value: "#D9C6A5", builtIn: true },
+  { id: "builtin-cream", value: "#F3EBDD", builtIn: true },
+  { id: "builtin-white", value: "#F7F7F5", builtIn: true },
+  { id: "builtin-clay", value: "#C98267", builtIn: true },
+  { id: "builtin-peach", value: "#F2B38F", builtIn: true },
+  { id: "builtin-coral", value: "#EA806E", builtIn: true },
   { id: "builtin-rose", value: "#ECA8BD", builtIn: true },
-  { id: "builtin-periwinkle", value: "#CDD6F4", builtIn: true }
+  { id: "builtin-dusty-rose", value: "#C98296", builtIn: true },
+  { id: "builtin-lavender", value: "#B7A1D7", builtIn: true },
+  { id: "builtin-periwinkle", value: "#CDD6F4", builtIn: true },
+  { id: "builtin-blue", value: "#7FA9D6", builtIn: true },
+  { id: "builtin-sky", value: "#A6D4E8", builtIn: true },
+  { id: "builtin-navy", value: "#30466E", builtIn: true },
+  { id: "builtin-teal", value: "#529B95", builtIn: true },
+  { id: "builtin-mint", value: "#A6D2BD", builtIn: true },
+  { id: "builtin-sage", value: "#A9B79A", builtIn: true },
+  { id: "builtin-olive", value: "#797F51", builtIn: true },
+  { id: "builtin-butter", value: "#E8CE7A", builtIn: true },
+  { id: "builtin-mauve", value: "#9E7C9F", builtIn: true }
 ];
 const DEFAULT_ROLE_VALUES = {
   base: "#282025",
@@ -19,6 +40,12 @@ const targetList = document.getElementById("targetList");
 const pickAreaButton = document.getElementById("pickArea");
 const newColorValue = document.getElementById("newColorValue");
 const saveColorButton = document.getElementById("saveColor");
+const sampleColorButton = document.getElementById("sampleColor");
+const toggleSiteColorsButton = document.getElementById("toggleSiteColors");
+const undoButton = document.getElementById("undoChange");
+const redoButton = document.getElementById("redoChange");
+const savedSiteSearch = document.getElementById("savedSiteSearch");
+const savedSiteResults = document.getElementById("savedSiteResults");
 
 let activeHost = "";
 let activeTabId = null;
@@ -26,6 +53,9 @@ let colors = [];
 let siteRules = {};
 let activeColorId = "";
 let collapsedGroups = {};
+let pausedSites = {};
+let undoHistory = [];
+let redoHistory = [];
 let openGroupPaletteId = "";
 let previewDirty = false;
 let previewTimer = null;
@@ -118,7 +148,7 @@ function renderColorLibrary() {
     select.append(swatch);
     select.addEventListener("click", async () => {
       activeColorId = color.id;
-      await chrome.storage.local.set({ activeColorId });
+      await saveUndoableSettings({ activeColorId });
       renderColorLibrary();
       showStatus("Color selected for new areas.");
     });
@@ -137,7 +167,7 @@ function renderColorLibrary() {
       schedulePreview();
     });
     edit.addEventListener("change", async () => {
-      await chrome.storage.local.set({ colors });
+      await saveUndoableSettings({ colors });
       await refreshTabs();
       renderTargets();
       showStatus("Color updated.");
@@ -157,7 +187,7 @@ function renderColorLibrary() {
         if (colorUseCount(color.id)) return;
         colors = colors.filter(item => item.id !== color.id);
         if (activeColorId === color.id) activeColorId = colors[0]?.id || "";
-        await chrome.storage.local.set({ colors, activeColorId });
+        await saveUndoableSettings({ colors, activeColorId });
         renderColorLibrary();
         showStatus("Color deleted.");
       });
@@ -170,6 +200,8 @@ function renderColorLibrary() {
 }
 
 function renderTargets() {
+  renderSiteToggle();
+  renderSavedSites();
   targetList.replaceChildren();
   if (!activeHost) {
     targetList.innerHTML = '<p class="target-empty">Open a webpage to pick areas.</p>';
@@ -261,9 +293,10 @@ function renderTargets() {
       siteRules[activeHost] = (siteRules[activeHost] || []).filter(rule => rule.groupId !== group.id);
       delete collapsedGroups[collapseKey];
       if (openGroupPaletteId === group.id) openGroupPaletteId = "";
-      await chrome.storage.local.set({ siteRules, collapsedGroups });
+      await saveUndoableSettings({ siteRules, collapsedGroups });
       await refreshTabs();
       renderTargets();
+      renderSavedSites();
       showStatus("Group deleted.");
     });
     controls.append(add, toggle, colorToggle, deleteGroup);
@@ -284,7 +317,7 @@ function renderTargets() {
         siteRules[activeHost] = (siteRules[activeHost] || []).map(rule =>
           rule.groupId === group.id ? { ...rule, colorId: color.id } : rule
         );
-        await chrome.storage.local.set({ siteRules });
+        await saveUndoableSettings({ siteRules });
         await refreshTabs();
         openGroupPaletteId = "";
         renderTargets();
@@ -296,14 +329,15 @@ function renderTargets() {
     const areaList = document.createElement("div");
     areaList.className = "group-areas";
     areaList.hidden = isCollapsed;
-    group.rules.forEach(rule => {
+    group.rules.forEach((rule, areaIndex) => {
       const row = document.createElement("div");
       const previewKey = group.id + "::" + rule.selector;
       const isFocused = focusedAreaKey === previewKey;
+      const isEnabled = rule.enabled !== false;
       row.className = "group-area";
       const label = document.createElement("button");
       label.type = "button";
-      label.className = "group-area-select" + (isFocused ? " focused" : "");
+      label.className = "group-area-select" + (isFocused ? " focused" : "") + (isEnabled ? "" : " disabled");
       label.textContent = rule.label || rule.selector;
       label.title = isFocused ? "Click to stop highlighting this area" : "Click to highlight this area on the page";
       label.setAttribute("aria-pressed", String(isFocused));
@@ -337,21 +371,48 @@ function renderTargets() {
           showStatus("Kaleido could not preview that area.", true);
         }
       });
+      const actions = document.createElement("div");
+      actions.className = "group-area-actions";
+      const moveUp = document.createElement("button");
+      moveUp.type = "button";
+      moveUp.className = "group-area-move";
+      moveUp.textContent = "↑";
+      moveUp.title = "Move area up";
+      moveUp.setAttribute("aria-label", "Move area up");
+      moveUp.disabled = areaIndex === 0;
+      moveUp.addEventListener("click", () => reorderArea(group.id, rule.selector, -1));
+      const moveDown = document.createElement("button");
+      moveDown.type = "button";
+      moveDown.className = "group-area-move";
+      moveDown.textContent = "↓";
+      moveDown.title = "Move area down";
+      moveDown.setAttribute("aria-label", "Move area down");
+      moveDown.disabled = areaIndex === group.rules.length - 1;
+      moveDown.addEventListener("click", () => reorderArea(group.id, rule.selector, 1));
+      const enable = document.createElement("button");
+      enable.type = "button";
+      enable.className = "group-area-enable" + (isEnabled ? "" : " off");
+      enable.textContent = isEnabled ? "On" : "Off";
+      enable.title = isEnabled ? "Turn this area off" : "Turn this area on";
+      enable.setAttribute("aria-pressed", String(isEnabled));
+      enable.addEventListener("click", () => toggleAreaEnabled(group.id, rule.selector));
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "group-area-remove";
-      remove.textContent = "Remove";
+      remove.textContent = "×";
+      remove.title = "Remove area from this group";
       remove.setAttribute("aria-label", "Remove " + (rule.label || "area") + " from Group " + (groupIndex + 1));
       remove.addEventListener("click", async () => {
         if (focusedAreaKey === previewKey) await clearFocusedArea();
         siteRules[activeHost] = (siteRules[activeHost] || []).filter(item => item.selector !== rule.selector);
         if (!siteRules[activeHost].some(item => item.groupId === group.id)) delete collapsedGroups[collapseKey];
-        await chrome.storage.local.set({ siteRules, collapsedGroups });
+        await saveUndoableSettings({ siteRules, collapsedGroups });
         await refreshTabs();
         renderTargets();
         showStatus("Area removed from its group.");
       });
-      row.append(label, remove);
+      actions.append(moveUp, moveDown, enable, remove);
+      row.append(label, actions);
       areaList.appendChild(row);
     });
 
@@ -376,8 +437,21 @@ async function saveColor() {
     activeColorId = color.id;
     showStatus("Color saved.");
   }
-  await chrome.storage.local.set({ colors, activeColorId });
+  await saveUndoableSettings({ colors, activeColorId });
   renderColorLibrary();
+}
+
+async function startEyedropper() {
+  if (!activeTabId || !activeHost) {
+    showStatus("Open a website before picking a color.", true);
+    return;
+  }
+  try {
+    await chrome.scripting.executeScript({ target: { tabId: activeTabId }, files: ["eyedropper.js"] });
+    showStatus("Click a page area to sample its background color. Press Escape to cancel.");
+  } catch {
+    showStatus("Kaleido could not start the page color picker.", true);
+  }
 }
 
 async function pickArea(groupId = "") {
@@ -439,7 +513,8 @@ function migrateRules(oldRules, oldThemes) {
         selector: rule.selector,
         label: rule.label || rule.selector,
         colorId: color.id,
-        groupId
+        groupId,
+        enabled: rule.enabled !== false
       }];
     });
   }
@@ -521,7 +596,8 @@ async function exportSettings() {
       colors,
       siteRules,
       activeColorId,
-      collapsedGroups
+      collapsedGroups,
+      pausedSites
     };
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -581,19 +657,28 @@ function validateImportedSettings(data) {
       if (!rule || typeof rule.selector !== "string" || !rule.selector || rule.selector.length > 1000 ||
           typeof rule.label !== "string" || rule.label.length > 80 ||
           typeof rule.groupId !== "string" || !rule.groupId || rule.groupId.length > 120 ||
-          typeof rule.colorId !== "string" || !colorIds.has(rule.colorId)) {
+          typeof rule.colorId !== "string" || !colorIds.has(rule.colorId) ||
+          (rule.enabled !== undefined && typeof rule.enabled !== "boolean")) {
         throw new Error("The code contains an invalid area.");
       }
       return {
         selector: rule.selector,
         label: rule.label,
         groupId: rule.groupId,
-        colorId: rule.colorId
+        colorId: rule.colorId,
+        enabled: rule.enabled !== false
       };
     });
     totalRules += rules.length;
   }
   if (totalRules > 10000) throw new Error("The code contains too many saved areas.");
+
+  const importedPausedSites = {};
+  if (data.pausedSites && typeof data.pausedSites === "object" && !Array.isArray(data.pausedSites)) {
+    for (const [domain, isPaused] of Object.entries(data.pausedSites)) {
+      if (/^[a-z0-9.-]{1,253}$/i.test(domain) && isPaused === true) importedPausedSites[domain] = true;
+    }
+  }
 
   const collapsed = {};
   if (data.collapsedGroups && typeof data.collapsedGroups === "object" && !Array.isArray(data.collapsedGroups)) {
@@ -605,6 +690,7 @@ function validateImportedSettings(data) {
     colors: importedColors,
     siteRules: importedRules,
     collapsedGroups: collapsed,
+    pausedSites: importedPausedSites,
     activeColorId: typeof data.activeColorId === "string" && colorIds.has(data.activeColorId) ? data.activeColorId : ""
   };
 }
@@ -620,7 +706,7 @@ async function importSettings() {
     showStatus("Paste a Kaleido transfer code into the box first.", true);
     return;
   }
-  if (!window.confirm("Importing replaces the Kaleido colors and groups currently saved on this device. Continue?")) return;
+  if (!window.confirm("Importing replaces the Kaleido colors, groups, and website states currently saved on this device. Continue?")) return;
 
   try {
     const [prefix, saltText, ivText, ciphertextText, extra] = code.split(".");
@@ -641,15 +727,18 @@ async function importSettings() {
     imported.colors.forEach(color => addColor(color.value, color.id));
     siteRules = imported.siteRules;
     collapsedGroups = imported.collapsedGroups;
+    pausedSites = imported.pausedSites;
     activeColorId = colors.some(color => color.id === imported.activeColorId)
       ? imported.activeColorId
       : colors[0]?.id || "";
-    await chrome.storage.local.set({ colors, siteRules, activeColorId, collapsedGroups });
+    await saveUndoableSettings({ colors, siteRules, activeColorId, collapsedGroups, pausedSites });
     await chrome.storage.local.remove(["themes", "palettes"]);
     await refreshTabs();
     renderColorLibrary();
     renderTargets();
-    showStatus("Colors and groups imported to this device.");
+    renderSiteToggle();
+    renderSavedSites();
+    showStatus("Colors, groups, and website states imported.");
   } catch {
     showStatus("Could not unlock that code. Check the code and passphrase.", true);
   }
@@ -682,13 +771,199 @@ async function clearFocusedArea() {
   } catch { /* The page or tab may have closed. */ }
 }
 
+
+const HISTORY_SETTING_KEYS = ["colors", "siteRules", "pausedSites", "activeColorId", "collapsedGroups"];
+const HISTORY_LIMIT = 15;
+
+function snapshotSettings(state, keys = HISTORY_SETTING_KEYS) {
+  const snapshot = {};
+  for (const key of keys) {
+    if (!HISTORY_SETTING_KEYS.includes(key)) continue;
+    if (key === "colors") snapshot[key] = Array.isArray(state[key]) ? state[key] : [];
+    else if (key === "activeColorId") snapshot[key] = typeof state[key] === "string" ? state[key] : "";
+    else snapshot[key] = state[key] && typeof state[key] === "object" ? state[key] : {};
+  }
+  return snapshot;
+}
+
+function renderHistoryButtons() {
+  undoButton.disabled = undoHistory.length === 0;
+  redoButton.disabled = redoHistory.length === 0;
+}
+
+async function saveUndoableSettings(changes) {
+  const keys = [...HISTORY_SETTING_KEYS, "kaleidoUndo", "kaleidoRedo"];
+  const stored = await chrome.storage.local.get(keys);
+  undoHistory = Array.isArray(stored.kaleidoUndo) ? stored.kaleidoUndo.slice(-HISTORY_LIMIT + 1) : [];
+  redoHistory = [];
+  const changedKeys = Object.keys(changes).filter(key => HISTORY_SETTING_KEYS.includes(key));
+  undoHistory.push(snapshotSettings(stored, changedKeys));
+  await chrome.storage.local.set({
+    ...changes,
+    kaleidoUndo: undoHistory,
+    kaleidoRedo: redoHistory
+  });
+  renderHistoryButtons();
+}
+
+async function applyHistory(direction) {
+  const keys = [...HISTORY_SETTING_KEYS, "kaleidoUndo", "kaleidoRedo"];
+  const stored = await chrome.storage.local.get(keys);
+  const undo = Array.isArray(stored.kaleidoUndo) ? [...stored.kaleidoUndo] : [];
+  const redo = Array.isArray(stored.kaleidoRedo) ? [...stored.kaleidoRedo] : [];
+  const source = direction === "undo" ? undo : redo;
+  if (!source.length) return;
+  const target = source.pop();
+  const targetKeys = Object.keys(target).filter(key => HISTORY_SETTING_KEYS.includes(key));
+  const current = snapshotSettings(stored, targetKeys);
+  if (direction === "undo") redo.push(current);
+  else undo.push(current);
+  undoHistory = undo.slice(-HISTORY_LIMIT);
+  redoHistory = redo.slice(-HISTORY_LIMIT);
+  const restored = snapshotSettings(target, targetKeys);
+  await chrome.storage.local.set({
+    ...restored,
+    kaleidoUndo: undoHistory,
+    kaleidoRedo: redoHistory
+  });
+  if (Object.prototype.hasOwnProperty.call(restored, "colors")) colors = restored.colors;
+  if (Object.prototype.hasOwnProperty.call(restored, "siteRules")) siteRules = restored.siteRules;
+  if (Object.prototype.hasOwnProperty.call(restored, "pausedSites")) pausedSites = restored.pausedSites;
+  if (Object.prototype.hasOwnProperty.call(restored, "activeColorId")) activeColorId = restored.activeColorId;
+  if (Object.prototype.hasOwnProperty.call(restored, "collapsedGroups")) collapsedGroups = restored.collapsedGroups;
+  renderHistoryButtons();
+  renderColorLibrary();
+  renderTargets();
+  renderSiteToggle();
+  renderSavedSites();
+  await refreshTabs();
+  showStatus(direction === "undo" ? "Last change undone." : "Change restored.");
+}
+
+function matchingSavedDomain(host) {
+  return Object.keys(siteRules)
+    .filter(domain => Array.isArray(siteRules[domain]) && (host === domain || host.endsWith("." + domain)))
+    .sort((a, b) => b.length - a.length)[0] || "";
+}
+
+function activePauseKey() {
+  return matchingSavedDomain(activeHost) || activeHost;
+}
+
+function renderSiteToggle() {
+  const canToggle = Boolean(activeHost);
+  const key = activePauseKey();
+  const isPaused = Boolean(key && pausedSites[key]);
+  toggleSiteColorsButton.disabled = !canToggle;
+  toggleSiteColorsButton.classList.toggle("paused", isPaused);
+  toggleSiteColorsButton.textContent = isPaused ? "Resume colors" : "Pause colors";
+  toggleSiteColorsButton.setAttribute("aria-pressed", String(isPaused));
+  toggleSiteColorsButton.title = isPaused
+    ? "Turn Kaleido colors back on for this website"
+    : "Temporarily turn off Kaleido colors for this website";
+}
+
+async function toggleSiteColors() {
+  if (!activeHost) return;
+  const key = activePauseKey();
+  if (pausedSites[key]) delete pausedSites[key];
+  else pausedSites[key] = true;
+  await saveUndoableSettings({ pausedSites });
+  renderSiteToggle();
+  await refreshTabs();
+  showStatus(pausedSites[key] ? "Colors paused for this website." : "Colors resumed for this website.");
+}
+
+function renderSavedSites() {
+  savedSiteResults.replaceChildren();
+  const query = savedSiteSearch.value.trim().toLowerCase();
+  const hosts = [...new Set([...Object.keys(siteRules), ...Object.keys(pausedSites)])]
+    .filter(host => host.toLowerCase().includes(query))
+    .sort((a, b) => a.localeCompare(b));
+  if (!hosts.length) {
+    const empty = document.createElement("p");
+    empty.className = "saved-site-empty";
+    empty.textContent = query ? "No matching saved websites." : "No saved websites yet.";
+    savedSiteResults.appendChild(empty);
+    return;
+  }
+  hosts.slice(0, 50).forEach(host => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "saved-site-button";
+    const name = document.createElement("span");
+    name.textContent = host;
+    button.appendChild(name);
+    if (pausedSites[host]) {
+      const badge = document.createElement("span");
+      badge.className = "saved-site-badge";
+      badge.textContent = "Paused";
+      button.appendChild(badge);
+    }
+    button.title = "Open this saved website";
+    button.addEventListener("click", async () => {
+      try {
+        const url = "https://" + host;
+        if (activeTabId) await chrome.tabs.update(activeTabId, { url });
+        else await chrome.tabs.create({ url });
+      } catch {
+        showStatus("Kaleido could not open that website.", true);
+      }
+    });
+    savedSiteResults.appendChild(button);
+  });
+  if (hosts.length > 50) {
+    const more = document.createElement("p");
+    more.className = "saved-site-empty";
+    more.textContent = "Showing the first 50 matches.";
+    savedSiteResults.appendChild(more);
+  }
+}
+
+async function reorderArea(groupId, selector, direction) {
+  const current = siteRules[activeHost] || [];
+  const indices = current.map((rule, index) => rule.groupId === groupId ? index : -1).filter(index => index >= 0);
+  const groupRules = indices.map(index => current[index]);
+  const itemIndex = groupRules.findIndex(rule => rule.selector === selector);
+  const targetIndex = itemIndex + direction;
+  if (itemIndex < 0 || targetIndex < 0 || targetIndex >= groupRules.length) return;
+  [groupRules[itemIndex], groupRules[targetIndex]] = [groupRules[targetIndex], groupRules[itemIndex]];
+  const reordered = [...current];
+  indices.forEach((index, i) => { reordered[index] = groupRules[i]; });
+  siteRules[activeHost] = reordered;
+  await saveUndoableSettings({ siteRules });
+  await refreshTabs();
+  renderTargets();
+  showStatus("Areas reordered.");
+}
+
+async function toggleAreaEnabled(groupId, selector) {
+  siteRules[activeHost] = (siteRules[activeHost] || []).map(rule =>
+    rule.groupId === groupId && rule.selector === selector
+      ? { ...rule, enabled: rule.enabled === false }
+      : rule
+  );
+  await saveUndoableSettings({ siteRules });
+  await refreshTabs();
+  renderTargets();
+  showStatus("Area setting updated.");
+}
+
 async function initialize() {
   saveColorButton.addEventListener("click", saveColor);
+  sampleColorButton.addEventListener("click", startEyedropper);
+  toggleSiteColorsButton.addEventListener("click", toggleSiteColors);
+  undoButton.addEventListener("click", () => applyHistory("undo"));
+  redoButton.addEventListener("click", () => applyHistory("redo"));
+  savedSiteSearch.addEventListener("input", renderSavedSites);
   pickAreaButton.addEventListener("click", () => pickArea());
   exportSettingsButton.addEventListener("click", exportSettings);
   importSettingsButton.addEventListener("click", importSettings);
   copySettingsButton.addEventListener("click", copySettingsCode);
-  const result = await chrome.storage.local.get(["colors", "siteRules", "activeColorId", "themes", "palettes", "collapsedGroups"]);
+  const result = await chrome.storage.local.get([
+    "colors", "siteRules", "activeColorId", "themes", "palettes", "collapsedGroups",
+    "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor"
+  ]);
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
 
   if (Array.isArray(result.colors)) {
@@ -709,6 +984,9 @@ async function initialize() {
 
   siteRules = migrateRules(result.siteRules, result.themes || {});
   collapsedGroups = result.collapsedGroups && typeof result.collapsedGroups === "object" ? result.collapsedGroups : {};
+  pausedSites = result.pausedSites && typeof result.pausedSites === "object" ? result.pausedSites : {};
+  undoHistory = Array.isArray(result.kaleidoUndo) ? result.kaleidoUndo : [];
+  redoHistory = Array.isArray(result.kaleidoRedo) ? result.kaleidoRedo : [];
   activeColorId = colors.some(color => color.id === result.activeColorId) ? result.activeColorId : colors[0]?.id || "";
   hasAllSitesPermission = await chrome.permissions.contains({ origins: [ALL_SITES_PATTERN] });
 
@@ -727,8 +1005,16 @@ async function initialize() {
   }
 
   await chrome.storage.local.set({ colors, siteRules, activeColorId, collapsedGroups });
+  renderHistoryButtons();
+  renderSiteToggle();
+  renderSavedSites();
   renderColorLibrary();
   renderTargets();
+  if (isHex(result.kaleidoSampledColor)) {
+    newColorValue.value = result.kaleidoSampledColor.toUpperCase();
+    showStatus("Color sampled. Save it to add it to your library.");
+    await chrome.storage.local.remove("kaleidoSampledColor");
+  }
 }
 
 window.addEventListener("pagehide", () => {
