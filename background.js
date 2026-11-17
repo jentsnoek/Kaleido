@@ -70,15 +70,15 @@ async function hasSiteAccess(domain) {
   }
 }
 
-async function applyToTab(tab) {
-  if (!tab || !Number.isInteger(tab.id) || typeof tab.url !== "string") return;
+async function applyToTab(tab, injectImmediately = true) {
+  if (!tab || !Number.isInteger(tab.id) || typeof tab.url !== "string") return false;
   let url;
   try {
     url = new URL(tab.url);
   } catch {
-    return;
+    return false;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return;
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
 
   const host = normalizeHost(url.hostname);
   const { siteRules = {}, colors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "pausedSites"]);
@@ -86,13 +86,26 @@ async function applyToTab(tab) {
   const isPaused = Boolean(pausedSites[host] || pausedSites[domain || host]);
   const rules = domain && !isPaused && await hasSiteAccess(domain) ? cleanRules(siteRules[domain], cleanColorLibrary(colors)) : [];
   try {
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: applyKaleidoRules, args: [rules] });
+    const currentTab = await chrome.tabs.get(tab.id);
+    if (currentTab.url !== tab.url) return false;
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: applyKaleidoRules,
+      args: [rules],
+      injectImmediately
+    });
+    return true;
   } catch {
     // Browser internal pages and pages without access cannot be changed.
+    return false;
   }
 }
 
 function applyKaleidoRules(rules) {
+  if (!document.documentElement) {
+    document.addEventListener("DOMContentLoaded", () => applyKaleidoRules(rules), { once: true });
+    return;
+  }
   if (window.__kaleidoObserver) {
     window.__kaleidoObserver.disconnect();
     window.__kaleidoObserver = null;
@@ -361,9 +374,31 @@ async function savePickedAreas(message, sender, sendResponse) {
 }
 
 chrome.runtime.onInstalled.addListener(() => { void refreshOpenTabs(); });
+const earlyNavigationApplications = new Map();
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete") void applyToTab(tab);
+  const navigationUrl = changeInfo.url || tab.url || "";
+  if (changeInfo.status === "loading") {
+    const task = applyToTab({ ...tab, url: navigationUrl }, true);
+    earlyNavigationApplications.set(tabId, { url: navigationUrl, task });
+    return;
+  }
+  if (changeInfo.status !== "complete") return;
+
+  const earlyAttempt = earlyNavigationApplications.get(tabId);
+  earlyNavigationApplications.delete(tabId);
+  if (earlyAttempt?.url === navigationUrl) {
+    void earlyAttempt.task.then(async applied => {
+      if (applied) return;
+      try {
+        const currentTab = await chrome.tabs.get(tabId);
+        if (currentTab.url === navigationUrl) await applyToTab(currentTab, true);
+      } catch { /* Tab may have closed. */ }
+    });
+  } else {
+    void applyToTab(tab, true);
+  }
 });
+chrome.tabs.onRemoved.addListener(tabId => earlyNavigationApplications.delete(tabId));
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try { await applyToTab(await chrome.tabs.get(tabId)); } catch { /* Tab may close. */ }
 });
