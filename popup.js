@@ -42,6 +42,7 @@ const newColorValue = document.getElementById("newColorValue");
 const saveColorButton = document.getElementById("saveColor");
 const sampleColorButton = document.getElementById("sampleColor");
 const toggleSiteColorsButton = document.getElementById("toggleSiteColors");
+const siteToggleLabel = document.getElementById("siteToggleLabel");
 const undoButton = document.getElementById("undoChange");
 const redoButton = document.getElementById("redoChange");
 const savedSiteSearch = document.getElementById("savedSiteSearch");
@@ -59,6 +60,8 @@ let redoHistory = [];
 let openGroupPaletteId = "";
 let previewDirty = false;
 let previewTimer = null;
+let groupPreviewTimer = null;
+let groupColorPreviewActive = false;
 let hasAllSitesPermission = false;
 let focusedAreaKey = "";
 let focusedAreaSelector = "";
@@ -124,6 +127,38 @@ function schedulePreview() {
   }, 50);
 }
 
+function previewGroupColor(groupId, colorId) {
+  clearTimeout(groupPreviewTimer);
+  if (!activeTabId || !activeHost) return;
+  groupColorPreviewActive = true;
+  previewDirty = true;
+  groupPreviewTimer = setTimeout(() => {
+    const rules = (siteRules[activeHost] || []).map(rule =>
+      rule.groupId === groupId ? { ...rule, colorId } : rule
+    );
+    void chrome.runtime.sendMessage({
+      type: "kaleido-preview",
+      tabId: activeTabId,
+      colors,
+      rules
+    }).catch(() => {});
+  }, 35);
+}
+
+async function restoreGroupColorPreview() {
+  clearTimeout(groupPreviewTimer);
+  if (!groupColorPreviewActive || !activeTabId || !activeHost) return;
+  groupColorPreviewActive = false;
+  try {
+    await chrome.runtime.sendMessage({
+      type: "kaleido-preview",
+      tabId: activeTabId,
+      colors,
+      rules: siteRules[activeHost] || []
+    });
+  } catch { /* The page or tab may have closed. */ }
+}
+
 function colorUseCount(colorId) {
   return Object.values(siteRules).reduce((count, rules) =>
     count + (Array.isArray(rules) ? rules.filter(rule => rule?.colorId === colorId).length : 0), 0);
@@ -178,7 +213,8 @@ function renderColorLibrary() {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "delete-color";
-      remove.textContent = "Delete";
+      remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M9 7V4h6v3m3 0-.8 13H6.8L6 7m4 3v6m4-6v6"/></svg>';
+      remove.title = "Delete color";
       const used = colorUseCount(color.id) > 0;
       remove.disabled = used;
       remove.title = used ? "Change or remove areas using this color first" : "Delete color";
@@ -263,6 +299,7 @@ function renderTargets() {
     toggle.setAttribute("aria-expanded", String(!isCollapsed));
     toggle.addEventListener("click", async () => {
       if (!isCollapsed && focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
+      if (!isCollapsed && openGroupPaletteId === group.id) await restoreGroupColorPreview();
       collapsedGroups[collapseKey] = !isCollapsed;
       if (!isCollapsed && openGroupPaletteId === group.id) openGroupPaletteId = "";
       await chrome.storage.local.set({ collapsedGroups });
@@ -277,7 +314,8 @@ function renderTargets() {
     colorToggle.title = "Choose this group's color";
     colorToggle.setAttribute("aria-label", `Choose color for Group ${groupIndex + 1}`);
     colorToggle.setAttribute("aria-expanded", String(paletteIsOpen));
-    colorToggle.addEventListener("click", () => {
+    colorToggle.addEventListener("click", async () => {
+      if (paletteIsOpen) await restoreGroupColorPreview();
       openGroupPaletteId = paletteIsOpen ? "" : group.id;
       renderTargets();
     });
@@ -289,6 +327,7 @@ function renderTargets() {
     deleteGroup.title = "Delete this entire group and all its areas";
     deleteGroup.setAttribute("aria-label", `Delete Group ${groupIndex + 1}`);
     deleteGroup.addEventListener("click", async () => {
+      await restoreGroupColorPreview();
       if (focusedAreaKey.startsWith(group.id + "::")) await clearFocusedArea();
       siteRules[activeHost] = (siteRules[activeHost] || []).filter(rule => rule.groupId !== group.id);
       delete collapsedGroups[collapseKey];
@@ -313,11 +352,17 @@ function renderTargets() {
       swatch.title = "Change the color of this whole group";
       swatch.setAttribute("aria-label", `Set Group ${groupIndex + 1} to saved color ${colorIndex + 1}`);
       swatch.setAttribute("aria-pressed", String(color.id === group.colorId));
+      swatch.title = "Hover to preview; click to apply this color to the group";
+      swatch.addEventListener("mouseenter", () => previewGroupColor(group.id, color.id));
+      swatch.addEventListener("mouseleave", () => { void restoreGroupColorPreview(); });
+      swatch.addEventListener("focus", () => previewGroupColor(group.id, color.id));
+      swatch.addEventListener("blur", () => { void restoreGroupColorPreview(); });
       swatch.addEventListener("click", async () => {
         siteRules[activeHost] = (siteRules[activeHost] || []).map(rule =>
           rule.groupId === group.id ? { ...rule, colorId: color.id } : rule
         );
         await saveUndoableSettings({ siteRules });
+        await restoreGroupColorPreview();
         await refreshTabs();
         openGroupPaletteId = "";
         renderTargets();
@@ -856,11 +901,11 @@ function renderSiteToggle() {
   const isPaused = Boolean(key && pausedSites[key]);
   toggleSiteColorsButton.disabled = !canToggle;
   toggleSiteColorsButton.classList.toggle("paused", isPaused);
-  toggleSiteColorsButton.textContent = isPaused ? "Resume colors" : "Pause colors";
-  toggleSiteColorsButton.setAttribute("aria-pressed", String(isPaused));
+  siteToggleLabel.textContent = isPaused ? "Off" : "On";
+  toggleSiteColorsButton.setAttribute("aria-checked", String(!isPaused));
   toggleSiteColorsButton.title = isPaused
-    ? "Turn Kaleido colors back on for this website"
-    : "Temporarily turn off Kaleido colors for this website";
+    ? "Turn Kaleido colors on for this website"
+    : "Turn Kaleido colors off for this website";
 }
 
 async function toggleSiteColors() {
@@ -1019,6 +1064,7 @@ async function initialize() {
 
 window.addEventListener("pagehide", () => {
   clearTimeout(previewTimer);
+  clearTimeout(groupPreviewTimer);
   if (focusedAreaSelector && activeTabId) {
     try { void chrome.runtime.sendMessage({ type: "kaleido-focus-area", tabId: activeTabId, selector: focusedAreaSelector, active: false }); } catch { /* Popup may close. */ }
   }
