@@ -5,6 +5,7 @@
   const options = window.__kaleidoPickerOptions || {};
   let targetGroupId = typeof options.groupId === "string" ? options.groupId : "";
   const selectByColor = options.selectByColor === true;
+  const textMode = options.textMode === true;
   let matchedColorRgb = [];
   let matchedColorHex = "";
   let matchesTruncated = false;
@@ -294,10 +295,12 @@
       title.textContent = "Found " + selectedElements.length + " matching area" + (selectedElements.length === 1 ? "" : "s");
       hint.textContent = "Similar backgrounds are highlighted. Click one to remove it, or click another match to add it.";
     } else {
-      title.textContent = targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group";
+      title.textContent = textMode
+        ? (targetGroup ? `Add text to ${targetGroup.name}` : "Pick text areas")
+        : (targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group");
       hint.textContent = targetGroup
-        ? "Click areas to add them. Click again to remove."
-        : "Click areas to select them. Click again to remove.";
+        ? (textMode ? "Click text areas to add them. Click again to remove." : "Click areas to add them. Click again to remove.")
+        : (textMode ? "Click text to select it. Click again to remove." : "Click areas to select them. Click again to remove.");
     }
     content.replaceChildren();
     if (selectByColor && matchedColorHex) {
@@ -313,7 +316,8 @@
     }
     const actions = document.createElement("div");
     actions.id = "actions";
-    const confirm = makeButton(`Confirm ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"}`, "primary", showColors);
+    const selectionName = textMode ? "text area" : "area";
+    const confirm = makeButton(`Confirm ${selectedElements.length} ${selectionName}${selectedElements.length === 1 ? "" : "s"}`, "primary", showColors);
     confirm.disabled = selectedElements.length === 0;
     const clearButton = makeButton("Clear", "", () => showPicking(true));
     clearButton.disabled = selectedElements.length === 0;
@@ -332,7 +336,7 @@
     selectedElements = selectedElements.filter(element => element.isConnected);
     if (!selectedElements.length) {
       showPicking(true);
-      title.textContent = "Those areas are no longer on the page. Pick them again.";
+      title.textContent = textMode ? "That text is no longer on the page. Pick it again." : "Those areas are no longer on the page. Pick them again.";
       return;
     }
     stage = "colors";
@@ -348,8 +352,10 @@
         content.appendChild(makeButton("Close picker", "quiet", cleanup));
         return;
       }
-      title.textContent = `Add ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`;
-      hint.textContent = "These areas will use the group color.";
+      title.textContent = textMode
+        ? `Add ${selectedElements.length} text area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`
+        : `Add ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`;
+      hint.textContent = textMode ? "These text areas will use the group color." : "These areas will use the group color.";
       const add = makeButton(`Add to ${targetGroup.name}`, "primary", () => saveAreas(groupColor));
       const swatch = document.createElement("span");
       swatch.className = "swatch";
@@ -360,14 +366,20 @@
         makeButton("Back to areas", "quiet", () => showPicking()),
         makeButton("Cancel picking", "quiet", cleanup)
       );
-      footer.textContent = "New areas will use the same color as the rest of this group.";
+      footer.textContent = textMode
+        ? "New text areas will use the same color as the rest of this group."
+        : "New areas will use the same color as the rest of this group.";
       return;
     }
 
-    title.textContent = `Confirm ${selectedElements.length} selected area${selectedElements.length === 1 ? "" : "s"}`;
+    title.textContent = textMode
+      ? `Choose a color for ${selectedElements.length} selected text area${selectedElements.length === 1 ? "" : "s"}`
+      : `Confirm ${selectedElements.length} selected area${selectedElements.length === 1 ? "" : "s"}`;
     hint.textContent = selectByColor && matchedColorHex
       ? "Choose one color for these areas."
-      : "The purple outlines show what will change. Choose a color square for the group.";
+      : textMode
+        ? "The purple outlines show which text will change. Choose a color square."
+        : "The purple outlines show what will change. Choose a color square for the group.";
     const grid = document.createElement("div");
     grid.id = "colors";
     savedColors.forEach((color, index) => {
@@ -388,30 +400,34 @@
       makeButton("Back to areas", "quiet", () => showPicking()),
       makeButton("Cancel picking", "quiet", cleanup)
     );
-    footer.textContent = "One color applies to all selected areas."
+    footer.textContent = textMode ? "One color applies to all selected text areas." : "One color applies to all selected areas."
   }
 
   function saveAreas(color) {
-    const targets = selectedElements.filter(element => element.isConnected).map(element => ({
-      selector: selectorFor(element),
-      label: describe(element)
-    }));
+    const targets = selectedElements.filter(element => element.isConnected).map(element => {
+      const target = { selector: selectorFor(element), label: describe(element) };
+      if (!textMode) {
+        const background = parseColor(getComputedStyle(element).backgroundColor);
+        target.alpha = background && background.alpha > 0.01 ? background.alpha : 1;
+      }
+      return target;
+    });
     if (!targets.length) {
       showPicking(true);
-      title.textContent = "Those areas disappeared. Pick them again.";
+      title.textContent = textMode ? "That text disappeared. Pick it again." : "Those areas disappeared. Pick them again.";
       return;
     }
     stage = "saving";
-    title.textContent = "Saving selected areas.";
-    hint.textContent = "Applying the chosen group color.";
+    title.textContent = textMode ? "Saving selected text." : "Saving selected areas.";
+    hint.textContent = textMode ? "Applying the chosen text color." : "Applying the chosen group color.";
     content.replaceChildren();
-    const message = { type: "kaleido-targets-picked", targets, colorId: color.id };
+    const message = { type: "kaleido-targets-picked", targets, colorId: color.id, kind: textMode ? "text" : "background" };
     if (targetGroupId) message.groupId = targetGroupId;
     chrome.runtime.sendMessage(message, response => {
       const failed = chrome.runtime.lastError || !response?.ok;
       if (failed) {
         title.style.color = "#ff9ca8";
-        title.textContent = "Kaleido couldn't save these areas.";
+        title.textContent = textMode ? "Kaleido couldn't save this text." : "Kaleido couldn't save these areas.";
         hint.textContent = "Check site access and try again.";
         content.append(
           makeButton("Back to colors", "primary", showColors),
@@ -429,10 +445,12 @@
       selectedElements = [];
       renderSelectedHighlights();
       title.style.color = "#eca8bd";
-      title.textContent = `${count} area${count === 1 ? "" : "s"} added to ${targetGroup.name}.`;
-      hint.textContent = "Group color applied."
+      title.textContent = textMode
+        ? `${count} text area${count === 1 ? "" : "s"} added to ${targetGroup.name}.`
+        : `${count} area${count === 1 ? "" : "s"} added to ${targetGroup.name}.`;
+      hint.textContent = textMode ? "Text color applied." : "Group color applied."
       content.append(
-        makeButton("Add more areas", "primary", () => showPicking(true)),
+        makeButton(textMode ? "Add more text" : "Add more areas", "primary", () => showPicking(true)),
         makeButton("Done", "quiet", cleanup)
       );
       footer.textContent = "Change the group's color or its areas in the Kaleido menu.";
