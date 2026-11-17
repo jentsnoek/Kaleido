@@ -27,25 +27,38 @@
       <div class="current-site">
         <span>On this site</span>
         <strong id="siteName">Open a webpage</strong>
+        <button id="toggleSiteColors" class="site-toggle" type="button" disabled>Pause colors</button>
       </div>
     </header>
 
     <section class="section colors-section">
       <div class="section-heading">
         <h2>Colors</h2>
-        <span id="colorCount" class="count-pill">4</span>
+        <span id="colorCount" class="count-pill">25</span>
       </div>
       <p class="hint">Pick colors by their swatches. Save more below.</p>
       <div id="colorLibrary" class="color-library"></div>
       <div class="add-color-row">
         <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
         <button id="saveColor" class="small-button" type="button">Save color</button>
+        <button id="sampleColor" class="small-button" type="button">Pick from page</button>
       </div>
       <p id="status" class="status" aria-live="polite"></p>
     </section>
 
     <section class="section areas-section">
-      <div class="section-heading"><h2>Groups</h2></div>
+      <div class="section-heading">
+        <h2>Groups</h2>
+        <div class="history-controls">
+          <button id="undoChange" class="history-button" type="button" aria-label="Undo" title="Undo" disabled>↶</button>
+          <button id="redoChange" class="history-button" type="button" aria-label="Redo" title="Redo" disabled>↷</button>
+        </div>
+      </div>
+      <details class="saved-sites">
+        <summary>Find a saved website</summary>
+        <input id="savedSiteSearch" class="saved-site-search" type="search" placeholder="Search websites" aria-label="Search saved websites">
+        <div id="savedSiteResults" class="saved-site-results"></div>
+      </details>
       <p class="hint">Areas picked together share a color. Add or remove areas or recolor a whole group here.</p>
       <button id="pickArea" class="primary-button" type="button">Create a group</button>
       <div id="targetList" class="target-list"></div>
@@ -54,7 +67,7 @@
     <section class="section transfer-section">
       <details>
         <summary>Move settings to another device</summary>
-        <p class="hint">Kaleido compresses then encrypts your colors and groups into one code. Use the same passphrase to import it on another device.</p>
+        <p class="hint">Kaleido compresses then encrypts your colors, groups, and enabled or paused settings into one code. Use the same passphrase to import it on another device.</p>
         <label class="transfer-label" for="transferPassword">Passphrase</label>
         <input id="transferPassword" class="transfer-password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
         <label class="transfer-label" for="transferCode">Encrypted code</label>
