@@ -163,6 +163,7 @@ footer a:hover { text-decoration: underline; }
 .pick-section { display: grid; gap: 8px; border-color: rgba(236,168,189,.36); background: linear-gradient(130deg, rgba(236,168,189,.12), rgba(85,61,68,.28)), rgba(40,32,37,.72); }
 .pick-intro { color: var(--text); font-size: 11px; line-height: 1.45; }
 .pick-area-hero { min-height: 48px; font-size: 14px; font-weight: 700; letter-spacing: .15px; }
+.text-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .secondary-pick-button { width: 100%; min-height: 36px; border: 1px solid rgba(236,168,189,.34); border-radius: 7px; padding: 7px 8px; color: var(--text); background: rgba(40,32,37,.55); font: 600 11px "Segoe UI",system-ui,sans-serif; cursor: pointer; }
 .secondary-pick-button:hover { border-color: var(--accent); color: var(--accent); }
 .secondary-pick-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
