@@ -4,6 +4,10 @@
 
   const options = window.__kaleidoPickerOptions || {};
   let targetGroupId = typeof options.groupId === "string" ? options.groupId : "";
+  const selectByColor = options.selectByColor === true;
+  let matchedColorKey = "";
+  let matchedColorHex = "";
+  let matchesTruncated = false;
   let targetGroup = null;
   let hoveredElement = null;
   let selectedElements = [];
@@ -35,6 +39,8 @@
     .swatch { width:28px; height:28px; flex:none; border:1px solid #ffffff66; border-radius:7px; box-shadow:inset 0 0 0 1px #0002; }
     #colors button { min-height:44px; padding:6px; }
     #colors button.active { border-color:#eca8bd; background:#5a3b4a; box-shadow:0 0 0 1px #eca8bd55; }
+    #match-summary { display:flex; align-items:center; gap:8px; margin-bottom:8px; color:#d8cbd4; font-size:11px; }
+    #match-summary .swatch { width:22px; height:22px; border-radius:6px; }
     #footer { margin-top:9px; color:#b8a7b7; font-size:10px; }
   `;
 
@@ -161,9 +167,93 @@
     return button;
   }
 
+  function parseSolidColor(value) {
+    const match = /^rgba?\((.+)\)$/i.exec(String(value || "").trim());
+    if (!match) return null;
+    const parts = match[1].replace(/\//g, " ").trim().split(/[\s,]+/).filter(Boolean);
+    if (parts.length < 3) return null;
+    const channel = part => {
+      const number = Number.parseFloat(part);
+      return Number.isFinite(number) ? Math.max(0, Math.min(255, Math.round(part.endsWith("%") ? number * 2.55 : number))) : NaN;
+    };
+    const rgb = parts.slice(0, 3).map(channel);
+    const alphaPart = parts[3] || "1";
+    const alphaNumber = Number.parseFloat(alphaPart);
+    const alpha = alphaPart.endsWith("%") ? alphaNumber / 100 : alphaNumber;
+    if (!rgb.every(Number.isFinite) || !Number.isFinite(alpha) || alpha < 0.98) return null;
+    return { key: rgb.join(","), hex: "#" + rgb.map(value => value.toString(16).padStart(2, "0")).join("").toUpperCase() };
+  }
+
+  function findSolidBackgroundSource(element) {
+    let current = element;
+    while (current instanceof Element && current !== document.documentElement) {
+      const color = parseSolidColor(getComputedStyle(current).backgroundColor);
+      if (color) return { element: current, ...color };
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  function findMatchingColorAreas(colorKey) {
+    const matches = [];
+    const selected = new Set();
+    let truncated = false;
+    for (const element of document.querySelectorAll("body *")) {
+      if (element === host || host.contains(element) || element === document.body) continue;
+      const color = parseSolidColor(getComputedStyle(element).backgroundColor);
+      if (!color || color.key !== colorKey) continue;
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) <= 0.02) continue;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 8 || rect.height < 8) continue;
+      let coveredByMatch = false;
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        if (selected.has(parent)) { coveredByMatch = true; break; }
+      }
+      if (coveredByMatch) continue;
+      if (matches.length === 100) { truncated = true; break; }
+      matches.push(element);
+      selected.add(element);
+    }
+    return { elements: matches, truncated };
+  }
+
+  function showColorTarget() {
+    stage = "color-target";
+    selectedElements = [];
+    renderSelectedHighlights();
+    title.style.color = "#f4eff3";
+    title.textContent = "Choose a color on the page";
+    hint.textContent = "Click a solid-colored area. Kaleido will find visible areas with that exact background color.";
+    content.replaceChildren(makeButton("Cancel picking", "quiet", cleanup));
+    footer.textContent = "Solid backgrounds are matched. Gradients, images, text colors and borders are skipped.";
+    highlight.style.display = "none";
+  }
+
+  function selectMatchingColor(element) {
+    const source = findSolidBackgroundSource(element);
+    if (!source || source.element === document.body) {
+      title.textContent = "Click a solid-colored area";
+      hint.textContent = "That spot has no solid background color. Try clicking directly on a colored panel or button.";
+      return;
+    }
+    const result = findMatchingColorAreas(source.key);
+    if (!result.elements.length) {
+      title.textContent = "No matching page areas found";
+      hint.textContent = "Try clicking directly on a larger solid-colored panel or button.";
+      return;
+    }
+    matchedColorKey = source.key;
+    matchedColorHex = source.hex;
+    matchesTruncated = result.truncated;
+    selectedElements = result.elements;
+    hoveredElement = source.element;
+    showPicking();
+  }
+
   function updatePinnedHighlights() {
     renderSelectedHighlights();
-    if (hoveredElement?.isConnected && stage === "picking") placeBox(highlight, hoveredElement);
+    if (hoveredElement?.isConnected && (stage === "picking" || stage === "color-target")) placeBox(highlight, hoveredElement);
     else highlight.style.display = "none";
   }
 
@@ -172,11 +262,27 @@
     if (clear) selectedElements = [];
     renderSelectedHighlights();
     title.style.color = "#f4eff3";
-    title.textContent = targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group";
-    hint.textContent = targetGroup
-      ? "Click each page area to add it to this group. Click a selected area again to remove it."
-      : "Click each highlighted area to group it. Click a selected area again to remove it.";
+    if (selectByColor && matchedColorHex) {
+      title.textContent = "Found " + selectedElements.length + " matching area" + (selectedElements.length === 1 ? "" : "s");
+      hint.textContent = "The outlined areas share this exact solid background. Click a match to remove it, or click another area with the same color to include it.";
+    } else {
+      title.textContent = targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group";
+      hint.textContent = targetGroup
+        ? "Click each page area to add it to this group. Click a selected area again to remove it."
+        : "Click each highlighted area to group it. Click a selected area again to remove it.";
+    }
     content.replaceChildren();
+    if (selectByColor && matchedColorHex) {
+      const matchSummary = document.createElement("div");
+      matchSummary.id = "match-summary";
+      const matchSwatch = document.createElement("span");
+      matchSwatch.className = "swatch";
+      matchSwatch.style.backgroundColor = matchedColorHex;
+      const matchLabel = document.createElement("span");
+      matchLabel.textContent = "Matching background";
+      matchSummary.append(matchSwatch, matchLabel);
+      content.appendChild(matchSummary);
+    }
     const actions = document.createElement("div");
     actions.id = "actions";
     const confirm = makeButton(`Confirm ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"}`, "primary", showColors);
@@ -185,9 +291,11 @@
     clearButton.disabled = selectedElements.length === 0;
     actions.append(confirm, clearButton, makeButton("Cancel picking", "quiet", cleanup));
     content.appendChild(actions);
-    footer.textContent = selectedElements.length
-      ? `${selectedElements.length} selected - purple outlines mark your choices.`
-      : "Press Esc or Cancel picking to close without saving.";
+    footer.textContent = selectByColor && matchedColorHex
+      ? (matchesTruncated ? "Showing the first 100 matches. " : "") + "Solid background colors only; gradients, images, text and borders are skipped."
+      : selectedElements.length
+        ? `${selectedElements.length} selected - purple outlines mark your choices.`
+        : "Press Esc or Cancel picking to close without saving.";
     if (hoveredElement?.isConnected) placeBox(highlight, hoveredElement);
     else highlight.style.display = "none";
   }
@@ -229,7 +337,9 @@
     }
 
     title.textContent = `Confirm ${selectedElements.length} selected area${selectedElements.length === 1 ? "" : "s"}`;
-    hint.textContent = "The purple outlines show what will change. Choose a color square for the group.";
+    hint.textContent = selectByColor && matchedColorHex
+      ? "The outlined areas will be grouped together. Choose the new color for all of them."
+      : "The purple outlines show what will change. Choose a color square for the group.";
     const grid = document.createElement("div");
     grid.id = "colors";
     savedColors.forEach((color, index) => {
@@ -302,7 +412,7 @@
   }
 
   function onMove(event) {
-    if (stage !== "picking") return;
+    if (stage !== "picking" && stage !== "color-target") return;
     const element = pageElement(event);
     if (element) {
       hoveredElement = element;
@@ -315,21 +425,37 @@
 
   function onClick(event) {
     if (isPickerUi(event)) return;
-    if (stage !== "picking") {
+    if (stage !== "picking" && stage !== "color-target") {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
       return;
     }
-    const element = pageElement(event);
-    if (!element) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+    const element = pageElement(event);
+    if (!element) return;
     hoveredElement = element;
-    const index = selectedElements.indexOf(element);
-    if (index >= 0) selectedElements.splice(index, 1);
-    else if (selectedElements.length < 100) selectedElements.push(element);
+    if (stage === "color-target") {
+      selectMatchingColor(element);
+      return;
+    }
+    if (selectByColor && matchedColorKey) {
+      const selectedIndex = selectedElements.findIndex(item => item === element || item.contains(element));
+      if (selectedIndex >= 0) {
+        selectedElements.splice(selectedIndex, 1);
+      } else if (selectedElements.length < 100) {
+        const source = findSolidBackgroundSource(element);
+        if (source?.key === matchedColorKey && !selectedElements.some(item => item === source.element || item.contains(source.element))) {
+          selectedElements.push(source.element);
+        }
+      }
+    } else {
+      const index = selectedElements.indexOf(element);
+      if (index >= 0) selectedElements.splice(index, 1);
+      else if (selectedElements.length < 100) selectedElements.push(element);
+    }
     showPicking();
   }
 
@@ -376,7 +502,8 @@
       content.appendChild(makeButton("Cancel picking", "quiet", cleanup));
       return;
     }
-    showPicking();
+    if (selectByColor) showColorTarget();
+    else showPicking();
   });
 })();
 
