@@ -35,7 +35,7 @@
     </header>
 
     <section class="section pick-section">
-      <p class="pick-intro">Pick page areas yourself, or find every matching solid background color.</p>
+      <p class="pick-intro">Select areas or match a page color.</p>
       <button id="pickArea" class="primary-button pick-area-hero" type="button">Select an area</button>
       <button id="selectMatchingColor" class="secondary-pick-button" type="button">Select matching color</button>
     </section>
@@ -45,7 +45,7 @@
         <h2>Colors</h2>
         <span id="colorCount" class="count-pill">25</span>
       </div>
-      <p class="hint">Pick colors by their swatches. Save more below.</p>
+      <p class="hint">Choose a swatch. Save more below.</p>
       <div id="colorLibrary" class="color-library"></div>
       <div class="add-color-row">
         <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
@@ -56,7 +56,6 @@
           </svg>
         </button>
       </div>
-      <p id="status" class="status" aria-live="polite"></p>
     </section>
 
     <section class="section areas-section">
@@ -73,29 +72,38 @@
         <input id="savedSiteSearch" class="saved-site-search" type="search" placeholder="Search websites" aria-label="Search saved websites">
         <div id="savedSiteResults" class="saved-site-results"></div>
       </details>
-      <p class="hint">Manage groups and areas you have already picked on this website.</p>
+      <p class="hint">Your saved groups for this site.</p>
       <div id="targetList" class="target-list"></div>
     </section>
 
     <section class="section transfer-section">
-      <details>
-        <summary>Move settings to another device</summary>
-        <p class="hint">Kaleido compresses then encrypts your colors, groups, and enabled or paused settings into one code. Use the same passphrase to import it on another device.</p>
-        <label class="transfer-label" for="transferPassword">Passphrase</label>
-        <input id="transferPassword" class="transfer-password" type="password" autocomplete="new-password" placeholder="At least 8 characters">
-        <label class="transfer-label" for="transferCode">Encrypted code</label>
-        <textarea id="transferCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Create a code here, or paste one from another device"></textarea>
-        <div class="transfer-buttons">
-          <button id="exportSettings" class="small-button" type="button">Create code</button>
-          <button id="importSettings" class="small-button" type="button">Import code</button>
-          <button id="copySettings" class="small-button" type="button" hidden>Copy code</button>
+      <div class="transfer-header">
+        <div class="transfer-title">
+          <h2>Device code</h2>
+          <span id="transferCodeState" class="transfer-note">Updates automatically</span>
         </div>
-        <p class="transfer-note">Your passphrase is never saved. Website access still has to be granted separately by each browser.</p>
-      </details>
+        <button id="copySettings" class="transfer-icon-button" type="button" aria-label="Copy device code" title="Copy code">Copy</button>
+        <button id="toggleImport" class="transfer-icon-button transfer-arrow" type="button" aria-label="Open import" aria-controls="importPanel" aria-expanded="false" title="Import a code">⌄</button>
+      </div>
+      <textarea id="transferCode" class="transfer-code" rows="2" spellcheck="false" readonly aria-label="Your device code" placeholder="Creating code…"></textarea>
+      <p class="transfer-note">Compressed, not encrypted. Anyone with the code can import it.</p>
+      <div id="importPanel" class="import-panel" hidden>
+        <label class="transfer-label" for="importCode">Paste a code</label>
+        <textarea id="importCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Paste a Kaleido code here"></textarea>
+        <div id="legacyPassphraseRow" hidden>
+          <label class="transfer-label" for="transferPassword">Passphrase for an older code</label>
+          <input id="transferPassword" class="transfer-password" type="password" autocomplete="off" placeholder="Only needed for encrypted codes">
+        </div>
+        <div class="transfer-buttons">
+          <button id="importSettings" class="small-button" type="button">Import</button>
+        </div>
+        <p class="transfer-note">Import replaces settings on this device.</p>
+      </div>
     </section>
 
+    <p id="status" class="status" aria-live="polite"></p>
     <footer>
-      <span>Saved locally. Export an encrypted code for your other devices.</span>
+      <span>Saved on this device.</span>
       <a href="privacy.html" target="_blank">Privacy</a>
     </footer>
   </main>
