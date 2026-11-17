@@ -6,14 +6,13 @@
   let targetGroupId = typeof options.groupId === "string" ? options.groupId : "";
   const selectByColor = options.selectByColor === true;
   const textMode = options.textMode === true;
-  let matchedColorRgb = [];
   let matchedColorHex = "";
-  let matchesTruncated = false;
   let targetGroup = null;
   let hoveredElement = null;
   let selectedElements = [];
   let savedColors = [];
   let activeColorId = "";
+  let colorPreviewStyle = null;
   let stage = "picking";
 
   const host = document.createElement("div");
@@ -104,6 +103,36 @@
     });
   }
 
+  function clearColorPreview() {
+    if (colorPreviewStyle) colorPreviewStyle.remove();
+    colorPreviewStyle = null;
+    document.querySelectorAll("[data-kaleido-picker-preview]").forEach(element =>
+      element.removeAttribute("data-kaleido-picker-preview")
+    );
+  }
+
+  function previewSelectedColor(color) {
+    clearColorPreview();
+    const rules = [];
+    selectedElements.filter(element => element.isConnected).forEach((element, index) => {
+      element.setAttribute("data-kaleido-picker-preview", String(index));
+      if (textMode) {
+        rules.push(`[data-kaleido-picker-preview="${index}"] { color: ${color.value} !important; }`);
+      } else {
+        const background = parseColor(getComputedStyle(element).backgroundColor);
+        const alpha = background && background.alpha > 0.01 ? background.alpha : 1;
+        const channels = color.value.match(/[0-9a-f]{2}/gi).map(channel => parseInt(channel, 16));
+        const fill = alpha < 0.999 ? `rgba(${channels.join(",")},${alpha})` : color.value;
+        rules.push(`[data-kaleido-picker-preview="${index}"] { background-color: ${fill} !important; background-image: none !important; }`);
+      }
+    });
+    if (!rules.length) return;
+    colorPreviewStyle = document.createElement("style");
+    colorPreviewStyle.dataset.kaleidoPickerPreview = "true";
+    colorPreviewStyle.textContent = rules.join("\n");
+    (document.head || document.documentElement).appendChild(colorPreviewStyle);
+  }
+
   function describe(element) {
     const tag = element?.localName || "area";
     const accessibleName = element?.getAttribute("aria-label") || element?.getAttribute("title");
@@ -168,8 +197,6 @@
     return button;
   }
 
-  const COLOR_MATCH_TOLERANCE = 36;
-
   function parseColor(value) {
     const match = /^rgba?\((.+)\)$/i.exec(String(value || "").trim());
     if (!match) return null;
@@ -189,10 +216,6 @@
 
   function rgbToHex(rgb) {
     return "#" + rgb.map(value => Math.round(value).toString(16).padStart(2, "0")).join("").toUpperCase();
-  }
-
-  function colorDistance(first, second) {
-    return Math.sqrt(first.reduce((sum, channel, index) => sum + (channel - second[index]) ** 2, 0));
   }
 
   function effectiveBackground(element) {
@@ -222,38 +245,22 @@
     return null;
   }
 
-  function findMatchingColorAreas(targetRgb) {
-    const matches = [];
-    const selected = new Set();
-    let truncated = false;
-    for (const element of document.querySelectorAll("body *")) {
-      if (element === host || host.contains(element) || element === document.body) continue;
-      const ownColor = parseColor(getComputedStyle(element).backgroundColor);
-      if (!ownColor || ownColor.alpha <= 0.01) continue;
-      const rgb = effectiveBackground(element);
-      if (colorDistance(rgb, targetRgb) > COLOR_MATCH_TOLERANCE) continue;
-      const style = getComputedStyle(element);
-      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) <= 0.02) continue;
-      const rect = element.getBoundingClientRect();
-      if (rect.width < 8 || rect.height < 8) continue;
-      let coveredByMatch = false;
-      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-        if (selected.has(parent)) { coveredByMatch = true; break; }
-      }
-      if (coveredByMatch) continue;
-      if (matches.length === 100) { truncated = true; break; }
-      matches.push(element);
-      selected.add(element);
+  function hasExistingTextColor(element) {
+    for (let current = element; current instanceof Element && current !== document.body; current = current.parentElement) {
+      if (current.hasAttribute("data-kaleido-text-target")) return false;
+      const parent = current.parentElement;
+      if (parent && getComputedStyle(current).color !== getComputedStyle(parent).color) return true;
     }
-    return { elements: matches, truncated };
+    return false;
   }
+
   function showColorTarget() {
     stage = "color-target";
     selectedElements = [];
     renderSelectedHighlights();
     title.style.color = "#f4eff3";
-    title.textContent = "Choose a color on the page";
-    hint.textContent = "Click a color area. Kaleido finds similar backgrounds.";
+    title.textContent = "Choose one area by its color";
+    hint.textContent = "Click a solid-colored area. Only that area will be selected.";
     content.replaceChildren(makeButton("Cancel picking", "quiet", cleanup));
     footer.textContent = "Solid backgrounds only."
     highlight.style.display = "none";
@@ -266,16 +273,8 @@
       hint.textContent = "No solid color there. Try a colored panel."
       return;
     }
-    const result = findMatchingColorAreas(source.rgb);
-    if (!result.elements.length) {
-      title.textContent = "No matching page areas found";
-      hint.textContent = "Try another colored panel."
-      return;
-    }
-    matchedColorRgb = source.rgb;
     matchedColorHex = source.hex;
-    matchesTruncated = result.truncated;
-    selectedElements = result.elements;
+    selectedElements = [source.element];
     hoveredElement = source.element;
     showPicking();
   }
@@ -287,13 +286,14 @@
   }
 
   function showPicking(clear = false) {
+    clearColorPreview();
     stage = "picking";
     if (clear) selectedElements = [];
     renderSelectedHighlights();
     title.style.color = "#f4eff3";
     if (selectByColor && matchedColorHex) {
-      title.textContent = "Found " + selectedElements.length + " matching area" + (selectedElements.length === 1 ? "" : "s");
-      hint.textContent = "Similar backgrounds are highlighted. Click one to remove it, or click another match to add it.";
+      title.textContent = selectedElements.length ? "Selected one area" : "Select one area";
+      hint.textContent = "Only the area you click will be selected.";
     } else {
       title.textContent = textMode
         ? (targetGroup ? `Add text to ${targetGroup.name}` : "Pick text areas")
@@ -310,7 +310,7 @@
       matchSwatch.className = "swatch";
       matchSwatch.style.backgroundColor = matchedColorHex;
       const matchLabel = document.createElement("span");
-      matchLabel.textContent = "Matching background";
+      matchLabel.textContent = "Selected area color";
       matchSummary.append(matchSwatch, matchLabel);
       content.appendChild(matchSummary);
     }
@@ -324,7 +324,7 @@
     actions.append(confirm, clearButton, makeButton("Cancel picking", "quiet", cleanup));
     content.appendChild(actions);
     footer.textContent = selectByColor && matchedColorHex
-      ? (matchesTruncated ? "First 100 matches shown. " : "") + "Solid backgrounds only; gradients and images are skipped."
+      ? "Choose one area with a solid background."
       : selectedElements.length
         ? `${selectedElements.length} selected - purple outlines mark your choices.`
         : "Press Esc or Cancel picking to close without saving.";
@@ -352,10 +352,11 @@
         content.appendChild(makeButton("Close picker", "quiet", cleanup));
         return;
       }
+      previewSelectedColor(groupColor);
       title.textContent = textMode
         ? `Add ${selectedElements.length} text area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`
         : `Add ${selectedElements.length} area${selectedElements.length === 1 ? "" : "s"} to ${targetGroup.name}?`;
-      hint.textContent = textMode ? "These text areas will use the group color." : "These areas will use the group color.";
+      hint.textContent = textMode ? "These text areas will use the group color." : "Preview shown on the page. Confirm to add it to the group.";
       const add = makeButton(`Add to ${targetGroup.name}`, "primary", () => saveAreas(groupColor));
       const swatch = document.createElement("span");
       swatch.className = "swatch";
@@ -392,6 +393,10 @@
       swatch.className = "swatch";
       swatch.style.backgroundColor = color.value;
       button.appendChild(swatch);
+      button.addEventListener("mouseenter", () => previewSelectedColor(color));
+      button.addEventListener("mouseleave", clearColorPreview);
+      button.addEventListener("focus", () => previewSelectedColor(color));
+      button.addEventListener("blur", clearColorPreview);
       button.addEventListener("click", () => saveAreas(color));
       grid.appendChild(button);
     });
@@ -442,6 +447,7 @@
         name: response.groupName || targetGroup?.name || "this group",
         colorId: response.colorId || color.id
       };
+      clearColorPreview();
       selectedElements = [];
       renderSelectedHighlights();
       title.style.color = "#eca8bd";
@@ -487,15 +493,17 @@
       selectMatchingColor(element);
       return;
     }
-    if (selectByColor && matchedColorRgb.length) {
-      const selectedIndex = selectedElements.findIndex(item => item === element || item.contains(element));
-      if (selectedIndex >= 0) {
-        selectedElements.splice(selectedIndex, 1);
-      } else if (selectedElements.length < 100) {
-        const source = findBackgroundSource(element);
-        if (source && colorDistance(source.rgb, matchedColorRgb) <= COLOR_MATCH_TOLERANCE && !selectedElements.some(item => item === source.element || item.contains(source.element))) {
-          selectedElements.push(source.element);
-        }
+    if (textMode && hasExistingTextColor(element)) {
+      showPicking();
+      title.textContent = "This text already has its own color";
+      hint.textContent = "Kaleido skips colored text so links and important text keep their color.";
+      return;
+    }
+    if (selectByColor && matchedColorHex) {
+      const source = findBackgroundSource(element);
+      if (source) {
+        matchedColorHex = source.hex;
+        selectedElements = [source.element];
       }
     } else {
       const index = selectedElements.indexOf(element);
@@ -510,6 +518,7 @@
   }
 
   function cleanup() {
+    clearColorPreview();
     document.removeEventListener("mousemove", onMove, true);
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKeyDown, true);
@@ -533,8 +542,12 @@
       content.appendChild(makeButton("Cancel picking", "quiet", cleanup));
       return;
     }
-    savedColors = Array.isArray(response?.colors) ? response.colors : [];
-    activeColorId = response?.activeColorId || "";
+    savedColors = Array.isArray(textMode ? response?.textColors : response?.colors)
+      ? (textMode ? response.textColors : response.colors)
+      : [];
+    activeColorId = textMode
+      ? response?.activeTextColorId || ""
+      : response?.activeColorId || "";
     targetGroup = targetGroupId ? (response?.groups || []).find(group => group.id === targetGroupId) || null : null;
     if (targetGroupId && !targetGroup) {
       title.textContent = "That group could not be found.";
