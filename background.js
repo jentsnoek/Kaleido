@@ -31,10 +31,16 @@ function cleanRules(rules, colors) {
     const savedColor = colors.find(color => color.id === rule.colorId);
     const value = savedColor?.value || rule.value;
     if (!isColor(value)) return null;
+    const kind = rule.kind === "text" ? "text" : "background";
+    const alpha = typeof rule.alpha === "number" && Number.isFinite(rule.alpha)
+      ? Math.max(0, Math.min(1, rule.alpha))
+      : 1;
     return {
       selector: rule.selector,
       label: typeof rule.label === "string" ? rule.label.slice(0, 80) : rule.selector.slice(0, 80),
-      value: value.toUpperCase()
+      value: value.toUpperCase(),
+      kind,
+      alpha: kind === "background" ? alpha : 1
     };
   }).filter(Boolean);
 }
@@ -46,7 +52,10 @@ function summarizeGroups(rules) {
     if (!rule || typeof rule.groupId !== "string" || !rule.groupId) continue;
     let group = byId.get(rule.groupId);
     if (!group) {
-      group = { id: rule.groupId, name: `Group ${groups.length + 1}`, colorId: rule.colorId || "", count: 0 };
+      const kind = rule.kind === "text" ? "text" : "background";
+      const number = groups.filter(item => item.kind === kind).length + 1;
+      const name = rule.groupId.startsWith("page-text-") ? "Page text" : kind === "text" ? `Text group ${number}` : `Group ${number}`;
+      group = { id: rule.groupId, name, colorId: rule.colorId || "", kind, count: 0 };
       byId.set(rule.groupId, group);
       groups.push(group);
     }
@@ -112,11 +121,12 @@ function applyKaleidoRules(rules) {
   }
 
   const markers = [
-    "[data-kaleido-target]", "[data-kaleido-picked-role]", "[data-kaleido-root]",
+    "[data-kaleido-target]", "[data-kaleido-text-target]", "[data-kaleido-picked-role]", "[data-kaleido-root]",
     "[data-kaleido-bg]", "[data-kaleido-fg]", "[data-kaleido-border]", "[data-kaleido-link]"
   ].join(",");
   document.querySelectorAll(markers).forEach(element => {
     element.removeAttribute("data-kaleido-target");
+    element.removeAttribute("data-kaleido-text-target");
     element.removeAttribute("data-kaleido-picked-role");
     element.removeAttribute("data-kaleido-root");
     element.removeAttribute("data-kaleido-bg");
@@ -130,18 +140,20 @@ function applyKaleidoRules(rules) {
   const isValidColor = value => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
   const safeRules = Array.isArray(rules) ? rules.filter(rule =>
     rule && typeof rule.selector === "string" && rule.selector.length <= 1000 &&
-    isValidColor(rule.value)
+    isValidColor(rule.value) && Number.isFinite(rule.alpha) && rule.alpha >= 0 && rule.alpha <= 1 &&
+    (rule.kind === "text" || rule.kind === "background")
   ) : [];
   if (!safeRules.length) return;
 
   function applyRules(root) {
     safeRules.forEach((rule, index) => {
       try {
+        const marker = rule.kind === "text" ? "data-kaleido-text-target" : "data-kaleido-target";
         if (root instanceof Element && root.matches(rule.selector)) {
-          root.setAttribute("data-kaleido-target", String(index));
+          root.setAttribute(marker, String(index));
         }
         if (root && typeof root.querySelectorAll === "function") {
-          root.querySelectorAll(rule.selector).forEach(element => element.setAttribute("data-kaleido-target", String(index)));
+          root.querySelectorAll(rule.selector).forEach(element => element.setAttribute(marker, String(index)));
         }
       } catch {
         // A selector may stop matching after the website changes its markup.
@@ -152,15 +164,26 @@ function applyKaleidoRules(rules) {
   applyRules(document);
   const style = document.createElement("style");
   style.setAttribute("data-kaleido-styles", "true");
-  style.textContent = safeRules.map((rule, index) =>
-    `[data-kaleido-target="${index}"] { background-color: ${rule.value} !important; background-image: none !important; }`
-  ).join("");
+  style.textContent = safeRules.map((rule, index) => {
+    if (rule.kind === "text") {
+      return `[data-kaleido-text-target="${index}"], [data-kaleido-text-target="${index}"] * { color: ${rule.value} !important; }`;
+    }
+    const channels = rule.value.match(/[0-9a-f]{2}/gi).map(channel => parseInt(channel, 16));
+    const value = rule.alpha < 0.999 ? `rgba(${channels.join(",")},${rule.alpha})` : rule.value;
+    return `[data-kaleido-target="${index}"] { background-color: ${value} !important; background-image: none !important; }`;
+  }).join("");
   (document.head || document.documentElement).appendChild(style);
 
   function refreshRules(root) {
-    if (root instanceof Element) root.removeAttribute("data-kaleido-target");
+    if (root instanceof Element) {
+      root.removeAttribute("data-kaleido-target");
+      root.removeAttribute("data-kaleido-text-target");
+    }
     if (root && typeof root.querySelectorAll === "function") {
-      root.querySelectorAll("[data-kaleido-target]").forEach(element => element.removeAttribute("data-kaleido-target"));
+      root.querySelectorAll("[data-kaleido-target], [data-kaleido-text-target]").forEach(element => {
+        element.removeAttribute("data-kaleido-target");
+        element.removeAttribute("data-kaleido-text-target");
+      });
     }
     applyRules(root);
   }
@@ -320,13 +343,17 @@ async function savePickedAreas(message, sender, sendResponse) {
     sendResponse({ ok: false });
     return;
   }
+  const kind = message.kind === "text" ? "text" : "background";
   const requestedGroupId = typeof message.groupId === "string" ? message.groupId.trim() : "";
   let groupId = requestedGroupId;
   let colorId = String(message.colorId || "");
   const targets = Array.isArray(message.targets) ? message.targets.slice(0, 100).map(target => {
     const selector = typeof target?.selector === "string" ? target.selector.trim() : "";
     const label = typeof target?.label === "string" ? target.label.slice(0, 80) : selector.slice(0, 80);
-    return { selector, label };
+    const alpha = typeof target?.alpha === "number" && Number.isFinite(target.alpha)
+      ? Math.max(0, Math.min(1, target.alpha))
+      : 1;
+    return { selector, label, kind, alpha: kind === "background" ? alpha : 1 };
   }).filter(target => target.selector && target.selector.length <= 1000) : [];
   if (!targets.length) {
     sendResponse({ ok: false });
@@ -338,7 +365,7 @@ async function savePickedAreas(message, sender, sendResponse) {
   const rules = Array.isArray(siteRules[domain]) ? siteRules[domain].filter(rule => rule && typeof rule.selector === "string") : [];
   if (groupId) {
     const existingGroup = rules.find(rule => rule.groupId === groupId);
-    if (!existingGroup) {
+    if (!existingGroup || (existingGroup.kind === "text" ? "text" : "background") !== kind) {
       sendResponse({ ok: false });
       return;
     }
@@ -355,12 +382,17 @@ async function savePickedAreas(message, sender, sendResponse) {
     return;
   }
   for (const target of targets) {
-    const existing = rules.find(rule => rule.selector === target.selector);
+    const existing = rules.find(rule =>
+      rule.selector === target.selector &&
+      (rule.kind === "text" ? "text" : "background") === kind
+    );
     if (existing) {
       existing.colorId = colorId;
       existing.label = target.label;
       existing.groupId = groupId;
       existing.enabled = true;
+      existing.kind = target.kind;
+      existing.alpha = target.alpha;
       delete existing.role;
     } else {
       rules.push({ ...target, colorId, groupId, enabled: true });
@@ -369,8 +401,12 @@ async function savePickedAreas(message, sender, sendResponse) {
   siteRules[domain] = rules;
   await saveUndoableSettings({ siteRules, activeColorId: colorId });
   await applyToTab(sender.tab);
-  const groupName = summarizeGroups(rules).find(group => group.id === groupId)?.name || "Group";
-  sendResponse({ ok: true, domain, rules, count: targets.length, groupId, colorId, groupName });
+  const groups = summarizeGroups(rules);
+  const groupIndex = groups.findIndex(group => group.id === groupId);
+  const groupName = kind === "text"
+    ? (groupId.startsWith("page-text-") ? "Page text" : `Text group ${Math.max(1, groupIndex + 1)}`)
+    : `Group ${Math.max(1, groupIndex + 1)}`;
+  sendResponse({ ok: true, domain, rules, count: targets.length, groupId, colorId, groupName, kind });
 }
 
 chrome.runtime.onInstalled.addListener(() => { void refreshOpenTabs(); });
