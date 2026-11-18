@@ -908,7 +908,7 @@ function toggleImportPanel() {
   const expanded = importPanel.hidden;
   importPanel.hidden = !expanded;
   toggleImportButton.setAttribute("aria-expanded", String(expanded));
-  toggleImportButton.textContent = expanded ? "⌃" : "⌄";
+  toggleImportButton.textContent = expanded ? "Hide paste box" : "Paste code";
 }
 
 function validateImportedSettings(data) {
