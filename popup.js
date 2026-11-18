@@ -920,14 +920,17 @@ function validateImportedSettings(data) {
   if (data.colors.length > 1000) throw new Error("The code contains too many colors.");
   if (data.textColors !== undefined && !Array.isArray(data.textColors)) throw new Error("The code contains invalid text colors.");
   const importedColors = [];
-  const colorIds = new Set();
+  const colorIds = new Set(DEFAULT_COLORS.map(color => color.id));
+  const importedColorIds = new Set();
   const importedTextColors = [];
-  const textColorIds = new Set();
+  const textColorIds = new Set(DEFAULT_TEXT_COLORS.map(color => color.id));
+  const importedTextColorIds = new Set();
   for (const color of data.colors) {
     if (!color || typeof color.id !== "string" || !color.id || color.id.length > 80 || !isHex(color.value)) {
       throw new Error("The code contains an invalid color.");
     }
-    if (!colorIds.has(color.id)) {
+    if (!importedColorIds.has(color.id)) {
+      importedColorIds.add(color.id);
       colorIds.add(color.id);
       importedColors.push({ id: color.id, value: color.value.toUpperCase() });
     }
@@ -939,7 +942,8 @@ function validateImportedSettings(data) {
     if (!color || typeof color.id !== "string" || !color.id || color.id.length > 80 || !isHex(color.value)) {
       throw new Error("The code contains an invalid text color.");
     }
-    if (!textColorIds.has(color.id)) {
+    if (!importedTextColorIds.has(color.id)) {
+      importedTextColorIds.add(color.id);
       textColorIds.add(color.id);
       importedTextColors.push({ id: color.id, value: color.value.toUpperCase() });
     }
