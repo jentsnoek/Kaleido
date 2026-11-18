@@ -114,6 +114,9 @@ const transferCodeState = document.getElementById("transferCodeState");
 const toggleImportButton = document.getElementById("toggleImport");
 const importSettingsButton = document.getElementById("importSettings");
 const copySettingsButton = document.getElementById("copySettings");
+const downloadSettingsButton = document.getElementById("downloadSettings");
+const chooseSettingsFileButton = document.getElementById("chooseSettingsFile");
+const settingsFileInput = document.getElementById("settingsFile");
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
@@ -1090,6 +1093,41 @@ async function copySettingsCode() {
     showStatus("Select and copy the code.");
   }
 }
+
+async function downloadSettingsFile() {
+  try {
+    const code = await createAutomaticTransferCode();
+    const url = URL.createObjectURL(new Blob([code + "\n"], { type: "text/plain;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "kaleido-settings.txt";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showStatus("Settings file downloaded.");
+  } catch {
+    showStatus("Could not export settings.", true);
+  }
+}
+
+async function importSettingsFile() {
+  const file = settingsFileInput.files?.[0];
+  settingsFileInput.value = "";
+  if (!file) return;
+  if (file.size > 20000000) {
+    showStatus("Settings file is too large.", true);
+    return;
+  }
+  try {
+    importCodeInput.value = (await file.text()).trim();
+    updateLegacyPassphraseVisibility();
+    await importSettings();
+  } catch {
+    showStatus("Could not read that settings file.", true);
+  }
+}
+
 async function clearFocusedArea() {
   const selector = focusedAreaSelector;
   focusedAreaKey = "";
@@ -1338,6 +1376,9 @@ async function initialize() {
   importCodeInput.addEventListener("input", updateLegacyPassphraseVisibility);
   importSettingsButton.addEventListener("click", importSettings);
   copySettingsButton.addEventListener("click", copySettingsCode);
+  downloadSettingsButton.addEventListener("click", downloadSettingsFile);
+  chooseSettingsFileButton.addEventListener("click", () => settingsFileInput.click());
+  settingsFileInput.addEventListener("change", importSettingsFile);
   updateLegacyPassphraseVisibility();
   const result = await chrome.storage.local.get([
     "colors", "textColors", "siteRules", "activeColorId", "activeTextColorId", "themes", "palettes", "collapsedGroups",

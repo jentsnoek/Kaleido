@@ -103,7 +103,10 @@
         <button id="toggleImport" class="transfer-icon-button transfer-arrow" type="button" aria-label="Open import" aria-controls="importPanel" aria-expanded="false" title="Import a code">⌄</button>
       </div>
       <textarea id="transferCode" class="transfer-code" rows="2" spellcheck="false" readonly aria-label="Your device code" placeholder="Creating code…"></textarea>
-      <p class="transfer-note">Compressed offline code. It grows with your saved areas; tiny codes need online storage. Anyone with it can import your settings.</p>
+      <div class="transfer-buttons">
+        <button id="downloadSettings" class="small-button" type="button">Export .txt</button>
+      </div>
+      <p class="transfer-note">Compressed offline code. You can also save it as a .txt file. It grows with your saved areas; tiny codes need online storage. Anyone with it can import your settings.</p>
       <div id="importPanel" class="import-panel" hidden>
         <label class="transfer-label" for="importCode">Paste a code</label>
         <textarea id="importCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Paste a Kaleido code here"></textarea>
@@ -112,7 +115,9 @@
           <input id="transferPassword" class="transfer-password" type="password" autocomplete="off" placeholder="Only needed for encrypted codes">
         </div>
         <div class="transfer-buttons">
-          <button id="importSettings" class="small-button" type="button">Import</button>
+          <button id="importSettings" class="small-button" type="button">Import code</button>
+          <button id="chooseSettingsFile" class="small-button" type="button">Import .txt</button>
+          <input id="settingsFile" type="file" accept=".txt,text/plain" hidden aria-label="Choose a Kaleido settings text file">
         </div>
         <p class="transfer-note">Import replaces settings on this device.</p>
       </div>
