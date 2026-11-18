@@ -22,7 +22,6 @@
       </div>
       <div class="brand-copy">
         <h1>Kaleido</h1>
-        <p>Pick areas. Choose colors.</p>
       </div>
       <div class="current-site">
         <span>On this site</span>
@@ -35,9 +34,8 @@
     </header>
 
     <section class="section pick-section">
-      <p class="pick-intro">Select areas or match a color inside one component.</p>
       <button id="pickArea" class="primary-button pick-area-hero" type="button">Select an area</button>
-      <button id="selectMatchingColor" class="secondary-pick-button" type="button">Pick area by color</button>
+      <button id="selectMatchingColor" class="secondary-pick-button" type="button">Match by color</button>
     </section>
 
     <section class="section colors-section">
@@ -45,7 +43,6 @@
         <h2>Colors</h2>
         <span id="colorCount" class="count-pill">25</span>
       </div>
-      <p class="hint">Choose a swatch. Save more below.</p>
       <div id="colorLibrary" class="color-library"></div>
       <div class="add-color-row">
         <input id="newColorValue" class="new-color-value" type="color" value="#ECA8BD" aria-label="Choose a color to save">
@@ -63,7 +60,6 @@
         <h2>Text colors</h2>
         <span id="textColorCount" class="count-pill">24</span>
       </div>
-      <p class="hint">Pick a text color, then select text or color all text.</p>
       <div id="textColorLibrary" class="color-library"></div>
       <div class="add-color-row">
         <input id="newTextColorValue" class="new-color-value" type="color" value="#F4F1EA" aria-label="Choose a text color to save">
@@ -71,7 +67,7 @@
       </div>
       <div class="text-actions">
         <button id="pickText" class="secondary-pick-button" type="button">Select text</button>
-        <button id="applyPageText" class="secondary-pick-button" type="button">Color all text</button>
+        <button id="applyPageText" class="secondary-pick-button" type="button">All text</button>
       </div>
     </section>
 
@@ -85,11 +81,10 @@
         </div>
       </div>
       <details class="saved-sites">
-        <summary>Find a saved website</summary>
+        <summary>Saved websites</summary>
         <input id="savedSiteSearch" class="saved-site-search" type="search" placeholder="Search websites" aria-label="Search saved websites">
         <div id="savedSiteResults" class="saved-site-results"></div>
       </details>
-      <p class="hint">Your saved groups for this site.</p>
       <div id="targetList" class="target-list"></div>
     </section>
 
@@ -108,7 +103,6 @@
         <button id="chooseSettingsFile" class="small-button" type="button">Import .txt</button>
         <input id="settingsFile" type="file" accept=".txt,text/plain" hidden aria-label="Choose a Kaleido settings text file">
       </div>
-      <p class="transfer-note">Compressed offline code. You can also save it as a .txt file. It grows with your saved areas; tiny codes need online storage. Anyone with it can import your settings.</p>
       <div id="importPanel" class="import-panel" hidden>
         <label class="transfer-label" for="importCode">Paste a code</label>
         <textarea id="importCode" class="transfer-code" rows="3" spellcheck="false" placeholder="Paste a Kaleido code here"></textarea>
@@ -119,14 +113,13 @@
         <div class="transfer-buttons">
           <button id="importSettings" class="small-button" type="button">Import code</button>
         </div>
-        <p class="transfer-note">Import replaces settings on this device.</p>
+        <p class="transfer-note">Import replaces this device’s settings.</p>
       </div>
     </section>
 
     <p id="status" class="status" aria-live="polite"></p>
     <footer>
-      <span>Saved on this device.</span>
-      <button id="grantSiteAccess" class="small-button permission-button" type="button">Allow saved sites</button>
+      <button id="grantSiteAccess" class="small-button permission-button" type="button" title="Grant browser access to saved websites">Grant permissions</button>
       <a href="privacy.html" target="_blank">Privacy</a>
     </footer>
   </main>
