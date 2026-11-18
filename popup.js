@@ -3,27 +3,27 @@ const DEFAULT_COLORS = [
   { id: "builtin-charcoal", value: "#20242B", builtIn: true },
   { id: "builtin-slate", value: "#475569", builtIn: true },
   { id: "builtin-plum", value: "#553D44", builtIn: true },
-  { id: "builtin-warm-stone", value: "#786C60", builtIn: true },
-  { id: "builtin-taupe", value: "#A58B78", builtIn: true },
-  { id: "builtin-beige", value: "#D9C6A5", builtIn: true },
-  { id: "builtin-cream", value: "#F3EBDD", builtIn: true },
-  { id: "builtin-white", value: "#F7F7F5", builtIn: true },
-  { id: "builtin-clay", value: "#C98267", builtIn: true },
-  { id: "builtin-peach", value: "#F2B38F", builtIn: true },
-  { id: "builtin-coral", value: "#EA806E", builtIn: true },
-  { id: "builtin-rose", value: "#ECA8BD", builtIn: true },
-  { id: "builtin-dusty-rose", value: "#C98296", builtIn: true },
-  { id: "builtin-lavender", value: "#B7A1D7", builtIn: true },
-  { id: "builtin-periwinkle", value: "#CDD6F4", builtIn: true },
-  { id: "builtin-blue", value: "#7FA9D6", builtIn: true },
-  { id: "builtin-sky", value: "#A6D4E8", builtIn: true },
+  { id: "builtin-warm-stone", value: "#62574F", builtIn: true },
+  { id: "builtin-taupe", value: "#746459", builtIn: true },
+  { id: "builtin-beige", value: "#71634F", builtIn: true },
+  { id: "builtin-cream", value: "#756D5D", builtIn: true },
+  { id: "builtin-white", value: "#5D5A55", builtIn: true },
+  { id: "builtin-clay", value: "#805744", builtIn: true },
+  { id: "builtin-peach", value: "#805F50", builtIn: true },
+  { id: "builtin-coral", value: "#7F5148", builtIn: true },
+  { id: "builtin-rose", value: "#78505D", builtIn: true },
+  { id: "builtin-dusty-rose", value: "#704B56", builtIn: true },
+  { id: "builtin-lavender", value: "#625773", builtIn: true },
+  { id: "builtin-periwinkle", value: "#515C78", builtIn: true },
+  { id: "builtin-blue", value: "#435C75", builtIn: true },
+  { id: "builtin-sky", value: "#456575", builtIn: true },
   { id: "builtin-navy", value: "#30466E", builtIn: true },
-  { id: "builtin-teal", value: "#529B95", builtIn: true },
-  { id: "builtin-mint", value: "#A6D2BD", builtIn: true },
-  { id: "builtin-sage", value: "#A9B79A", builtIn: true },
-  { id: "builtin-olive", value: "#797F51", builtIn: true },
-  { id: "builtin-butter", value: "#E8CE7A", builtIn: true },
-  { id: "builtin-mauve", value: "#9E7C9F", builtIn: true }
+  { id: "builtin-teal", value: "#3F6662", builtIn: true },
+  { id: "builtin-mint", value: "#4C685C", builtIn: true },
+  { id: "builtin-sage", value: "#596650", builtIn: true },
+  { id: "builtin-olive", value: "#626044", builtIn: true },
+  { id: "builtin-butter", value: "#75633E", builtIn: true },
+  { id: "builtin-mauve", value: "#66546A", builtIn: true }
 ];
 const DEFAULT_TEXT_COLORS = [
   { id: "text-white", value: "#FFFFFF", builtIn: true },
@@ -1393,7 +1393,7 @@ async function initialize() {
 
   if (Array.isArray(result.colors)) {
     for (const saved of result.colors) {
-      if (saved && isHex(saved.value)) addColor(saved.value, saved.id || "");
+      if (saved && isHex(saved.value) && !DEFAULT_COLORS.some(color => color.id === saved.id)) addColor(saved.value, saved.id || "");
     }
   }
   if (Array.isArray(result.textColors)) {

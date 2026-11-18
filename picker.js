@@ -12,6 +12,10 @@
   let targetGroup = null;
   let hoveredElement = null;
   let selectedElements = [];
+  let dragStart = null;
+  let dragBox = null;
+  let dragStyle = null;
+  let suppressClickUntil = 0;
   let savedColors = [];
   let activeColorId = "";
   let colorPreviewStyle = null;
@@ -26,6 +30,7 @@
     * { box-sizing: border-box; }
     #selections { position:fixed; inset:0; z-index:1; pointer-events:none; }
     .picked { position:fixed; border:2px solid #e8c7ff; border-radius:5px; background:rgba(205,180,255,.17); box-shadow:0 0 0 2px rgba(205,180,255,.18); pointer-events:none; }
+    .drag-selection { position:fixed; border:1px solid #e8c7ff; background:rgba(205,180,255,.18); box-shadow:0 0 0 1px rgba(205,180,255,.25); pointer-events:none; }
     #highlight { display:none; position:fixed; z-index:2; border:2px solid #eca8bd; border-radius:5px; background:rgba(236,168,189,.24); box-shadow:0 0 0 9999px rgba(0,0,0,.14), 0 0 0 4px rgba(236,168,189,.16); pointer-events:none; }
     #panel { position:fixed; top:16px; right:16px; width:min(340px, calc(100vw - 32px)); max-height:calc(100vh - 32px); overflow:auto; z-index:3; padding:15px; border:1px solid #765261; border-radius:14px; color:#f4eff3; background:#211a20; box-shadow:0 12px 38px #0009; font:13px/1.45 Segoe UI,system-ui,sans-serif; pointer-events:auto; }
     #brand { margin:0 0 9px; color:#eca8bd; font-size:16px; font-weight:750; }
@@ -373,8 +378,8 @@
         ? (targetGroup ? `Add text to ${targetGroup.name}` : "Pick text areas")
         : (targetGroup ? `Add areas to ${targetGroup.name}` : "Pick areas for a new group");
       hint.textContent = targetGroup
-        ? (textMode ? "Click text areas to add them. Click again to remove." : "Click areas to add them. Click again to remove.")
-        : (textMode ? "Click text to select it. Click again to remove." : "Click areas to select them. Click again to remove.");
+        ? (textMode ? "Click text or drag a box around several text areas. Click again to remove." : "Click areas to add them. Click again to remove.")
+        : (textMode ? "Click text or drag a box around several text areas. Click again to remove." : "Click areas to select them. Click again to remove.");
     }
     content.replaceChildren();
     if (selectByColor && matchedColorHex) {
@@ -400,7 +405,7 @@
     footer.textContent = selectByColor && matchedColorHex
       ? "Only matching pieces in this component are selected."
       : selectedElements.length
-        ? `${selectedElements.length} selected - purple outlines mark your choices.`
+        ? `${selectedElements.length} selected - purple outlines mark your choices. Drag to select several text areas.`
         : "Press Esc or Cancel picking to close without saving.";
     if (hoveredElement?.isConnected) placeBox(highlight, hoveredElement);
     else highlight.style.display = "none";
@@ -539,6 +544,25 @@
 
   function onMove(event) {
     if (stage !== "picking" && stage !== "color-target") return;
+    if (textMode && dragStart && stage === "picking") {
+      const dx = event.clientX - dragStart.x;
+      const dy = event.clientY - dragStart.y;
+      if (!dragBox && Math.hypot(dx, dy) >= 6) {
+        dragBox = document.createElement("div");
+        dragBox.className = "drag-selection";
+        selections.appendChild(dragBox);
+        dragStyle = document.createElement("style");
+        dragStyle.textContent = "* { user-select:none !important; cursor:crosshair !important; }";
+        (document.head || document.documentElement).appendChild(dragStyle);
+      }
+      if (dragBox) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        updateDragBox(event.clientX, event.clientY);
+        return;
+      }
+    }
     const element = pageElement(event);
     if (element) {
       hoveredElement = element;
@@ -549,8 +573,69 @@
     }
   }
 
+  function updateDragBox(clientX, clientY) {
+    const left = Math.min(dragStart.x, clientX);
+    const top = Math.min(dragStart.y, clientY);
+    dragBox.style.left = `${left}px`;
+    dragBox.style.top = `${top}px`;
+    dragBox.style.width = `${Math.abs(clientX - dragStart.x)}px`;
+    dragBox.style.height = `${Math.abs(clientY - dragStart.y)}px`;
+  }
+
+  function hasDirectText(element) {
+    return Array.from(element.childNodes).some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+  }
+
+  function selectTextInBox(rect) {
+    const candidates = Array.from(document.body.querySelectorAll("*"));
+    const matches = candidates.filter(element => {
+      if (element === host || element.closest("[data-kaleido-picker-ui]") || !hasDirectText(element)) return false;
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
+      if (hasExistingTextColor(element)) return false;
+      const bounds = element.getBoundingClientRect();
+      return bounds.width > 0 && bounds.height > 0 && bounds.right >= rect.left && bounds.left <= rect.right &&
+        bounds.bottom >= rect.top && bounds.top <= rect.bottom;
+    });
+    const additions = matches.filter(element => !selectedElements.includes(element));
+    selectedElements.push(...additions.slice(0, Math.max(0, 100 - selectedElements.length)));
+  }
+
+  function onMouseDown(event) {
+    if (!textMode || stage !== "picking" || event.button !== 0 || isPickerUi(event)) return;
+    dragStart = { x: event.clientX, y: event.clientY };
+    dragBox = null;
+  }
+
+  function onMouseUp(event) {
+    if (!dragStart) return;
+    if (!dragBox) {
+      dragStart = null;
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    const left = Math.min(dragStart.x, event.clientX);
+    const top = Math.min(dragStart.y, event.clientY);
+    selectTextInBox({ left, top, right: Math.max(dragStart.x, event.clientX), bottom: Math.max(dragStart.y, event.clientY) });
+    dragBox.remove();
+    dragBox = null;
+    dragStyle?.remove();
+    dragStyle = null;
+    dragStart = null;
+    suppressClickUntil = Date.now() + 250;
+    showPicking();
+  }
+
   function onClick(event) {
     if (isPickerUi(event)) return;
+    if (Date.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (stage !== "picking" && stage !== "color-target") {
       event.preventDefault();
       event.stopPropagation();
@@ -603,7 +688,10 @@
 
   function cleanup() {
     clearColorPreview();
+    dragStyle?.remove();
     document.removeEventListener("mousemove", onMove, true);
+    document.removeEventListener("mousedown", onMouseDown, true);
+    document.removeEventListener("mouseup", onMouseUp, true);
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("keydown", onKeyDown, true);
     window.removeEventListener("scroll", updatePinnedHighlights, true);
@@ -613,6 +701,8 @@
   }
 
   document.addEventListener("mousemove", onMove, true);
+  document.addEventListener("mousedown", onMouseDown, true);
+  document.addEventListener("mouseup", onMouseUp, true);
   document.addEventListener("click", onClick, true);
   document.addEventListener("keydown", onKeyDown, true);
   window.addEventListener("scroll", updatePinnedHighlights, true);
