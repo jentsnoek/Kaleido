@@ -117,6 +117,7 @@ const copySettingsButton = document.getElementById("copySettings");
 const downloadSettingsButton = document.getElementById("downloadSettings");
 const chooseSettingsFileButton = document.getElementById("chooseSettingsFile");
 const settingsFileInput = document.getElementById("settingsFile");
+const grantSiteAccessButton = document.getElementById("grantSiteAccess");
 
 function normalizeHost(value) {
   let host = String(value || "").trim().toLowerCase();
@@ -694,6 +695,28 @@ async function ensureSiteAccess(action = "pick areas") {
   }
   if (!hasSitePermission) showStatus("Allow site access to " + action + ".", true);
   return hasSitePermission;
+}
+
+async function grantSavedSiteAccess() {
+  const hosts = [...new Set([...Object.keys(siteRules), ...Object.keys(pausedSites)])]
+    .filter(host => /^[a-z0-9.-]{1,253}$/i.test(host));
+  if (!hosts.length) {
+    showStatus("There are no saved websites yet.", true);
+    return;
+  }
+  const origins = hosts.map(permissionPatternForHost);
+  try {
+    const granted = await chrome.permissions.request({ origins });
+    if (!granted) {
+      showStatus("Website access was not granted.", true);
+      return;
+    }
+    if (activeHost) hasSitePermission = await chrome.permissions.contains({ origins: [permissionPatternForHost(activeHost)] });
+    await refreshTabs();
+    showStatus(`Access granted for ${hosts.length} saved website${hosts.length === 1 ? "" : "s"}.`);
+  } catch {
+    showStatus("Could not request access for saved websites.", true);
+  }
 }
 
 async function pickArea(groupId = "", selectByColor = false, textMode = false) {
@@ -1383,6 +1406,7 @@ async function initialize() {
   downloadSettingsButton.addEventListener("click", downloadSettingsFile);
   chooseSettingsFileButton.addEventListener("click", () => settingsFileInput.click());
   settingsFileInput.addEventListener("change", importSettingsFile);
+  grantSiteAccessButton.addEventListener("click", grantSavedSiteAccess);
   updateLegacyPassphraseVisibility();
   const result = await chrome.storage.local.get([
     "colors", "textColors", "siteRules", "activeColorId", "activeTextColorId", "themes", "palettes", "collapsedGroups",

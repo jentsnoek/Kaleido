@@ -201,6 +201,8 @@ footer a:hover { text-decoration: underline; }
 .reset-page-button:disabled { opacity: .35; cursor: default; }
 
 /* Keep both saved palettes compact. */
-.color-library { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.color-library { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 4px; }
 .color-card { padding: 1px; }
 .color-tools { top: 1px; right: 1px; }
+footer { gap: 6px; }
+.permission-button { padding: 5px 6px; font-size: 9px; }

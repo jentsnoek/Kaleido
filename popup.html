@@ -99,13 +99,13 @@
           <h2>Device code</h2>
           <span id="transferCodeState" class="transfer-note">Updates automatically</span>
         </div>
-        <button id="copySettings" class="transfer-icon-button" type="button" aria-label="Copy device code" title="Copy code">Copy</button>
       </div>
       <textarea id="transferCode" class="transfer-code" rows="2" spellcheck="false" readonly aria-label="Your device code" placeholder="Creating code…"></textarea>
       <div class="transfer-buttons">
+        <button id="copySettings" class="small-button" type="button" title="Copy device code">Copy code</button>
+        <button id="toggleImport" class="small-button" type="button" aria-controls="importPanel" aria-expanded="false">Paste code</button>
         <button id="downloadSettings" class="small-button" type="button">Export .txt</button>
         <button id="chooseSettingsFile" class="small-button" type="button">Import .txt</button>
-        <button id="toggleImport" class="small-button" type="button" aria-controls="importPanel" aria-expanded="false">Paste code</button>
         <input id="settingsFile" type="file" accept=".txt,text/plain" hidden aria-label="Choose a Kaleido settings text file">
       </div>
       <p class="transfer-note">Compressed offline code. You can also save it as a .txt file. It grows with your saved areas; tiny codes need online storage. Anyone with it can import your settings.</p>
@@ -126,6 +126,7 @@
     <p id="status" class="status" aria-live="polite"></p>
     <footer>
       <span>Saved on this device.</span>
+      <button id="grantSiteAccess" class="small-button permission-button" type="button">Allow saved sites</button>
       <a href="privacy.html" target="_blank">Privacy</a>
     </footer>
   </main>
