@@ -698,10 +698,10 @@ async function ensureSiteAccess(action = "pick areas") {
 }
 
 async function grantSavedSiteAccess() {
-  const hosts = [...new Set([...Object.keys(siteRules), ...Object.keys(pausedSites)])]
+  const hosts = [...new Set([...Object.keys(siteRules), ...Object.keys(pausedSites), activeHost])]
     .filter(host => /^[a-z0-9.-]{1,253}$/i.test(host));
   if (!hosts.length) {
-    showStatus("There are no saved websites yet.", true);
+    showStatus("Open a website first.", true);
     return;
   }
   const origins = hosts.map(permissionPatternForHost);
@@ -713,7 +713,7 @@ async function grantSavedSiteAccess() {
     }
     if (activeHost) hasSitePermission = await chrome.permissions.contains({ origins: [permissionPatternForHost(activeHost)] });
     await refreshTabs();
-    showStatus(`Access granted for ${hosts.length} saved website${hosts.length === 1 ? "" : "s"}.`);
+    showStatus("Permissions granted.");
   } catch {
     showStatus("Could not request access for saved websites.", true);
   }
