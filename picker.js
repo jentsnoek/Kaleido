@@ -321,9 +321,15 @@
 
   function hasExistingTextColor(element) {
     for (let current = element; current instanceof Element && current !== document.body; current = current.parentElement) {
-      if (current.hasAttribute("data-kaleido-text-target")) return false;
+      if (current.matches('a, [role="link"], button, [role="button"], mark, code, pre, kbd, samp, input, select, textarea, [contenteditable="true"]')) return true;
       const parent = current.parentElement;
-      if (parent && getComputedStyle(current).color !== getComputedStyle(parent).color) return true;
+      if (!parent) break;
+      const style = getComputedStyle(current);
+      const parentStyle = getComputedStyle(parent);
+      if (current.hasAttribute("data-kaleido-text-target")) return false;
+      if (style.color !== parentStyle.color) return true;
+      if (style.webkitTextFillColor !== parentStyle.webkitTextFillColor) return true;
+      if ((style.backgroundClip === "text" || style.webkitBackgroundClip === "text") && style.backgroundImage !== "none") return true;
     }
     return false;
   }
