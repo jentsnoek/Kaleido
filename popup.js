@@ -25,6 +25,18 @@ const DEFAULT_COLORS = [
   { id: "builtin-butter", value: "#75633E", builtIn: true },
   { id: "builtin-mauve", value: "#66546A", builtIn: true }
 ];
+const PREVIOUS_BACKGROUND_COLORS = new Map([
+  ["builtin-warm-stone", "#786C60"], ["builtin-taupe", "#A58B78"],
+  ["builtin-beige", "#D9C6A5"], ["builtin-cream", "#F3EBDD"],
+  ["builtin-white", "#F7F7F5"], ["builtin-clay", "#C98267"],
+  ["builtin-peach", "#F2B38F"], ["builtin-coral", "#EA806E"],
+  ["builtin-rose", "#ECA8BD"], ["builtin-dusty-rose", "#C98296"],
+  ["builtin-lavender", "#B7A1D7"], ["builtin-periwinkle", "#CDD6F4"],
+  ["builtin-blue", "#7FA9D6"], ["builtin-sky", "#A6D4E8"],
+  ["builtin-teal", "#529B95"], ["builtin-mint", "#A6D2BD"],
+  ["builtin-sage", "#A9B79A"], ["builtin-olive", "#797F51"],
+  ["builtin-butter", "#E8CE7A"], ["builtin-mauve", "#9E7C9F"]
+]);
 const DEFAULT_TEXT_COLORS = [
   { id: "text-white", value: "#FFFFFF", builtIn: true },
   { id: "text-soft-white", value: "#F7F4EE", builtIn: true },
@@ -1410,14 +1422,17 @@ async function initialize() {
   updateLegacyPassphraseVisibility();
   const result = await chrome.storage.local.get([
     "colors", "textColors", "siteRules", "activeColorId", "activeTextColorId", "themes", "palettes", "collapsedGroups",
-    "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor"
+    "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor", "backgroundPaletteVersion"
   ]);
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
   textColors = DEFAULT_TEXT_COLORS.map(color => ({ ...color }));
 
   if (Array.isArray(result.colors)) {
     for (const saved of result.colors) {
-      if (saved && isHex(saved.value) && !DEFAULT_COLORS.some(color => color.id === saved.id)) addColor(saved.value, saved.id || "");
+      if (!saved || !isHex(saved.value)) continue;
+      const oldDefault = PREVIOUS_BACKGROUND_COLORS.get(saved.id);
+      if (result.backgroundPaletteVersion !== 2 && oldDefault === saved.value.toUpperCase()) continue;
+      addColor(saved.value, saved.id || "");
     }
   }
   if (Array.isArray(result.textColors)) {
@@ -1474,7 +1489,7 @@ async function initialize() {
     try { hasSitePermission = await chrome.permissions.contains({ origins: [permissionPatternForHost(activeHost)] }); } catch { hasSitePermission = false; }
   }
 
-  await chrome.storage.local.set({ colors, textColors, siteRules, activeColorId, activeTextColorId, collapsedGroups });
+  await chrome.storage.local.set({ colors, textColors, siteRules, activeColorId, activeTextColorId, collapsedGroups, backgroundPaletteVersion: 2 });
   renderHistoryButtons();
   renderSiteToggle();
   renderSavedSites();
