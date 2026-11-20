@@ -92,10 +92,12 @@ async function applyToTab(tab, injectImmediately = true) {
   if (url.protocol !== "http:" && url.protocol !== "https:") return false;
 
   const host = normalizeHost(url.hostname);
-  const { siteRules = {}, colors = [], textColors = [], pausedSites = {} } = await chrome.storage.local.get(["siteRules", "colors", "textColors", "pausedSites"]);
+  const { siteRules = {}, colors = [], textColors = [], pausedSites = {}, privacyDisclosureAccepted = false } = await chrome.storage.local.get([
+    "siteRules", "colors", "textColors", "pausedSites", "privacyDisclosureAccepted"
+  ]);
   const domain = matchingDomain(host, siteRules);
   const isPaused = Boolean(pausedSites[host] || pausedSites[domain || host]);
-  const rules = domain && !isPaused && await hasSiteAccess(domain)
+  const rules = privacyDisclosureAccepted && domain && !isPaused && await hasSiteAccess(domain)
     ? cleanRules(siteRules[domain], cleanColorLibrary(colors), cleanColorLibrary(textColors))
     : [];
   try {
@@ -104,7 +106,7 @@ async function applyToTab(tab, injectImmediately = true) {
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: applyKaleidoRules,
-      args: [rules],
+      args: [rules, !privacyDisclosureAccepted],
       injectImmediately
     });
     return true;
@@ -114,10 +116,14 @@ async function applyToTab(tab, injectImmediately = true) {
   }
 }
 
-function applyKaleidoRules(rules) {
+function applyKaleidoRules(rules, stopPageTools = false) {
   if (!document.documentElement) {
-    document.addEventListener("DOMContentLoaded", () => applyKaleidoRules(rules), { once: true });
+    document.addEventListener("DOMContentLoaded", () => applyKaleidoRules(rules, stopPageTools), { once: true });
     return;
+  }
+  if (stopPageTools) {
+    try { window.__kaleidoPickerCleanup?.(); } catch { /* A stale picker may already be closing. */ }
+    try { window.__kaleidoEyedropper?.cleanup?.(); } catch { /* A stale eyedropper may already be closing. */ }
   }
   if (window.__kaleidoObserver) {
     window.__kaleidoObserver.disconnect();
@@ -449,8 +455,17 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try { await applyToTab(await chrome.tabs.get(tabId)); } catch { /* Tab may close. */ }
 });
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.siteRules || changes.colors || changes.textColors || changes.pausedSites)) void refreshOpenTabs();
+  if (areaName === "local" && (changes.siteRules || changes.colors || changes.textColors || changes.pausedSites || changes.privacyDisclosureAccepted)) {
+    void refreshOpenTabs();
+  }
 });
+
+function withPrivacyDisclosure(sendResponse, action) {
+  chrome.storage.local.get("privacyDisclosureAccepted").then(result => {
+    if (result.privacyDisclosureAccepted === true) action();
+    else sendResponse({ ok: false, privacyDisclosureRequired: true });
+  }).catch(() => sendResponse({ ok: false }));
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
@@ -459,7 +474,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "kaleido-preview") {
-    void applyPreview(message, sendResponse);
+    withPrivacyDisclosure(sendResponse, () => { void applyPreview(message, sendResponse); });
     return true;
   }
   if (message.type === "kaleido-clear-preview") {
@@ -467,26 +482,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "kaleido-focus-area") {
-    void focusAreaOnTab(message, sendResponse);
+    withPrivacyDisclosure(sendResponse, () => { void focusAreaOnTab(message, sendResponse); });
     return true;
   }
   if (message.type === "kaleido-color-picked") {
-    const value = typeof message.value === "string" ? message.value.toUpperCase() : "";
-    if (!isColor(value)) {
-      sendResponse({ ok: false });
-      return false;
-    }
-    chrome.storage.local.set({ kaleidoSampledColor: value })
-      .then(() => sendResponse({ ok: true }))
-      .catch(() => sendResponse({ ok: false }));
+    withPrivacyDisclosure(sendResponse, () => {
+      const value = typeof message.value === "string" ? message.value.toUpperCase() : "";
+      if (!isColor(value)) {
+        sendResponse({ ok: false });
+        return;
+      }
+      chrome.storage.local.set({ kaleidoSampledColor: value })
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }));
+    });
     return true;
   }
   if (message.type === "kaleido-targets-picked") {
-    void savePickedAreas(message, sender, sendResponse);
+    withPrivacyDisclosure(sendResponse, () => { void savePickedAreas(message, sender, sendResponse); });
     return true;
   }
   if (message.type === "kaleido-get-colors") {
-    chrome.storage.local.get(["colors", "textColors", "activeColorId", "activeTextColorId", "siteRules"]).then(result => {
+    withPrivacyDisclosure(sendResponse, () => chrome.storage.local.get(["colors", "textColors", "activeColorId", "activeTextColorId", "siteRules"]).then(result => {
       let domain = "";
       try { domain = normalizeHost(new URL(sender.tab?.url || "").hostname); } catch { /* No website context. */ }
       const colors = cleanColorLibrary(result.colors);
@@ -508,7 +525,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         activeTextColorId: result.activeTextColorId || "",
         groups: summarizeGroups(result.siteRules?.[domain])
       });
-    }).catch(() => sendResponse({ colors: [], textColors: [], activeColorId: "", activeTextColorId: "" }));
+    }).catch(() => sendResponse({ colors: [], textColors: [], activeColorId: "", activeTextColorId: "" })));
     return true;
   }
 });

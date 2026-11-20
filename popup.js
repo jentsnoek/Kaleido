@@ -93,9 +93,14 @@ const undoButton = document.getElementById("undoChange");
 const redoButton = document.getElementById("redoChange");
 const savedSiteSearch = document.getElementById("savedSiteSearch");
 const savedSiteResults = document.getElementById("savedSiteResults");
+const privacyDisclosure = document.getElementById("privacyDisclosure");
+const acceptPrivacyDisclosureButton = document.getElementById("acceptPrivacyDisclosure");
+const closePrivacyDisclosureButton = document.getElementById("closePrivacyDisclosure");
+const privacyDisclosureError = document.getElementById("privacyDisclosureError");
 
 let activeHost = "";
 let savedSitesRenderGeneration = 0;
+let privacyDisclosureAccepted = false;
 let activeTabId = null;
 let colors = [];
 let textColors = [];
@@ -1444,11 +1449,29 @@ async function initialize() {
   chooseSettingsFileButton.addEventListener("click", () => settingsFileInput.click());
   settingsFileInput.addEventListener("change", importSettingsFile);
   grantSiteAccessButton.addEventListener("click", grantSavedSiteAccess);
+  acceptPrivacyDisclosureButton.addEventListener("click", async () => {
+    acceptPrivacyDisclosureButton.disabled = true;
+    privacyDisclosureError.hidden = true;
+    try {
+      await chrome.storage.local.set({ privacyDisclosureAccepted: true });
+      privacyDisclosureAccepted = true;
+      privacyDisclosure.close();
+    } catch {
+      privacyDisclosureError.hidden = false;
+      acceptPrivacyDisclosureButton.disabled = false;
+    }
+  });
+  closePrivacyDisclosureButton.addEventListener("click", () => window.close());
+  privacyDisclosure.addEventListener("cancel", event => {
+    event.preventDefault();
+    window.close();
+  });
   updateLegacyPassphraseVisibility();
   const result = await chrome.storage.local.get([
     "colors", "textColors", "siteRules", "activeColorId", "activeTextColorId", "themes", "palettes", "collapsedGroups",
-    "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor", "backgroundPaletteVersion"
+    "pausedSites", "kaleidoUndo", "kaleidoRedo", "kaleidoSampledColor", "backgroundPaletteVersion", "privacyDisclosureAccepted"
   ]);
+  privacyDisclosureAccepted = result.privacyDisclosureAccepted === true;
   colors = DEFAULT_COLORS.map(color => ({ ...color }));
   textColors = DEFAULT_TEXT_COLORS.map(color => ({ ...color }));
 
@@ -1527,6 +1550,7 @@ async function initialize() {
     await chrome.storage.local.remove("kaleidoSampledColor");
   }
   await refreshAutomaticTransferCode();
+  if (!privacyDisclosureAccepted) privacyDisclosure.showModal();
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {

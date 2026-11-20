@@ -691,8 +691,10 @@
     window.removeEventListener("resize", updatePinnedHighlights, true);
     host.remove();
     window.__kaleidoPickerActive = false;
+    window.__kaleidoPickerCleanup = null;
   }
 
+  window.__kaleidoPickerCleanup = cleanup;
   document.addEventListener("mousemove", onMove, true);
   document.addEventListener("mousedown", onMouseDown, true);
   document.addEventListener("mouseup", onMouseUp, true);

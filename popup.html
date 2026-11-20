@@ -8,6 +8,17 @@
 </head>
 <body>
   <main class="app-shell">
+    <dialog id="privacyDisclosure" class="privacy-dialog" aria-labelledby="privacyDisclosureTitle">
+      <h2 id="privacyDisclosureTitle">How Kaleido uses site data</h2>
+      <p>With your permission, Kaleido reads page structure and styles on websites you allow so it can apply saved colors and help you choose areas. It checks the current website to load its settings. When you choose areas, it saves that website, element selectors, short labels, and colors in this browser.</p>
+      <p>Kaleido does not send this information to a server. You can remove saved website settings in the popup. Continuing means you agree to this local use.</p>
+      <a href="privacy.html" target="_blank">Read the privacy details</a>
+      <p id="privacyDisclosureError" class="privacy-dialog-error" hidden>Could not save your choice. Please try again.</p>
+      <div class="privacy-dialog-actions">
+        <button id="acceptPrivacyDisclosure" class="primary-button" type="button">Continue to Kaleido</button>
+        <button id="closePrivacyDisclosure" class="small-button" type="button">Close</button>
+      </div>
+    </dialog>
     <header class="brand">
       <div class="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 48 48">
