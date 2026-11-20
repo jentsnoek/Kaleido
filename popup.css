@@ -138,9 +138,13 @@ footer a:hover { text-decoration: underline; }
 .saved-sites > summary { color: var(--text); font-size: 10px; cursor: pointer; }
 .saved-site-search { width: 100%; margin-top: 7px; border: 1px solid rgba(205,214,244,.18); border-radius: 6px; padding: 6px 7px; color: var(--text); background: rgba(40,32,37,.75); font-size: 10px; }
 .saved-site-results { display: grid; gap: 4px; max-height: 150px; overflow-y: auto; margin-top: 6px; }
-.saved-site-button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 0; border-radius: 5px; padding: 6px; color: var(--text); background: rgba(85,61,68,.4); font-size: 10px; text-align: left; cursor: pointer; }
+.saved-site-button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; border-radius: 5px; padding: 6px; color: var(--text); background: rgba(85,61,68,.4); font-size: 10px; text-align: left; cursor: pointer; }
 .saved-site-button:hover { background: rgba(236,168,189,.14); }
+.saved-site-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-site-badges { display: flex; align-items: center; gap: 6px; margin-left: auto; white-space: nowrap; }
 .saved-site-badge { color: #F3D9A7; font-size: 9px; }
+.saved-site-permission.allowed { color: #A9D7B7; }
+.saved-site-permission.needs-access { color: #F3D9A7; }
 .saved-site-empty { padding: 5px; color: var(--muted); font-size: 9px; }
 .group-area { grid-template-columns: minmax(0,1fr) auto; }
 .group-area-actions { display: flex; align-items: center; gap: 2px; }

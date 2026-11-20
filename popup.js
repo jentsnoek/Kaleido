@@ -95,6 +95,7 @@ const savedSiteSearch = document.getElementById("savedSiteSearch");
 const savedSiteResults = document.getElementById("savedSiteResults");
 
 let activeHost = "";
+let savedSitesRenderGeneration = 0;
 let activeTabId = null;
 let colors = [];
 let textColors = [];
@@ -725,6 +726,7 @@ async function grantSavedSiteAccess() {
     }
     if (activeHost) hasSitePermission = await chrome.permissions.contains({ origins: [permissionPatternForHost(activeHost)] });
     await refreshTabs();
+    renderSavedSites();
     showStatus("Permissions granted.");
   } catch {
     showStatus("Could not request access for saved websites.", true);
@@ -1324,6 +1326,7 @@ async function toggleSiteColors() {
 }
 
 function renderSavedSites() {
+  const renderGeneration = ++savedSitesRenderGeneration;
   savedSiteResults.replaceChildren();
   const query = savedSiteSearch.value.trim().toLowerCase();
   const hosts = [...new Set([...Object.keys(siteRules), ...Object.keys(pausedSites)])]
@@ -1341,14 +1344,23 @@ function renderSavedSites() {
     button.type = "button";
     button.className = "saved-site-button";
     const name = document.createElement("span");
+    name.className = "saved-site-name";
     name.textContent = host;
     button.appendChild(name);
+    const badges = document.createElement("span");
+    badges.className = "saved-site-badges";
     if (pausedSites[host]) {
-      const badge = document.createElement("span");
-      badge.className = "saved-site-badge";
-      badge.textContent = "Paused";
-      button.appendChild(badge);
+      const pausedBadge = document.createElement("span");
+      pausedBadge.className = "saved-site-badge";
+      pausedBadge.textContent = "Paused";
+      badges.appendChild(pausedBadge);
     }
+    const permissionBadge = document.createElement("span");
+    permissionBadge.className = "saved-site-badge saved-site-permission";
+    permissionBadge.textContent = "Checking";
+    permissionBadge.title = "Checking Kaleido access";
+    badges.appendChild(permissionBadge);
+    button.appendChild(badges);
     button.title = "Open this saved website";
     button.addEventListener("click", async () => {
       try {
@@ -1360,6 +1372,19 @@ function renderSavedSites() {
       }
     });
     savedSiteResults.appendChild(button);
+    Promise.resolve().then(() => chrome.permissions.contains({ origins: [permissionPatternForHost(host)] })).then(hasPermission => {
+      if (renderGeneration !== savedSitesRenderGeneration || !button.isConnected) return;
+      permissionBadge.textContent = hasPermission ? "Allowed" : "Needs access";
+      permissionBadge.classList.toggle("allowed", hasPermission);
+      permissionBadge.classList.toggle("needs-access", !hasPermission);
+      permissionBadge.title = hasPermission
+        ? "Kaleido has access to this website"
+        : "Grant access to use Kaleido on this website";
+    }).catch(() => {
+      if (renderGeneration !== savedSitesRenderGeneration || !button.isConnected) return;
+      permissionBadge.textContent = "Unknown";
+      permissionBadge.title = "Kaleido could not check access for this website";
+    });
   });
   if (hosts.length > 50) {
     const more = document.createElement("p");
